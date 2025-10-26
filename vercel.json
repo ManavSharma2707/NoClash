@@ -5,13 +5,11 @@
       "src": "Backend/server.js",
       "use": "@vercel/node"
     },
-    {
+   {
       "src": "Frontend/package.json",
       "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    }
+      "config": { "distDir": "dist" } 
+   }
   ],
   "rewrites": [
     {
@@ -20,7 +18,8 @@
     },
     {
       "source": "/(.*)",
-      "destination": "/Frontend/dist/index.html"
+      "destination": "/Frontend/dist/index.html" 
     }
   ]
+
 }
