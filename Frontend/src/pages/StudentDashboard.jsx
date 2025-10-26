@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'; // Added useRef
+import logo from '../../Utils/logo.png';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { Toaster, toast } from 'react-hot-toast';
@@ -27,7 +28,7 @@ apiClient.interceptors.request.use((config) => {
     return Promise.reject(error);
 });
 
-// --- Reusable UI Components (from AdminDashboard) ---
+// --- Reusable UI Components ---
 
 const LoadingSpinner = ({ size = 'h-8 w-8' }) => (
     <div className="flex justify-center items-center py-10">
@@ -74,8 +75,29 @@ const Button = ({ children, onClick, type = 'button', variant = 'primary', disab
     );
 };
 
+// --- Added InputField (needed for Modal) ---
+const InputField = ({ label, name, id, type = 'text', value, onChange, placeholder, required = true, disabled = false, error = null }) => (
+    <div className="mb-4">
+        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={id || name}>
+            {label} {required && <span className="text-red-500">*</span>}
+        </label>
+        <input
+            className={`shadow-sm appearance-none border ${error ? 'border-red-500' : 'border-gray-300'} rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 ${error ? 'focus:ring-red-500' : 'focus:ring-indigo-500'} focus:border-transparent transition duration-150 ease-in-out ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+            id={id || name}
+            name={name}
+            type={type}
+            placeholder={placeholder || label}
+            value={value}
+            onChange={onChange}
+            required={required}
+            disabled={disabled}
+        />
+        {error && <p className="text-red-500 text-xs italic mt-1">{error}</p>}
+    </div>
+);
 
-// --- Date Helper Functions (Copied from ProfessorDashboard) ---
+
+// --- Date Helper Functions ---
 const addDays = (date, days) => {
     const result = new Date(date);
     result.setDate(result.getDate() + days);
@@ -86,102 +108,316 @@ const getStartOfWeek = (date) => {
     const d = new Date(date);
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setHours(0, 0, 0, 0);
     return new Date(d.setDate(diff));
 };
 
 const formatDateShort = (date) => {
-    return date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
+    return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
 };
 
 const formatTime = (date) => {
-    return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    if (!date || isNaN(date)) return 'Invalid Time';
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 };
 
 const isSameDay = (date1, date2) => {
-    return date1.getFullYear() === date2.getFullYear() &&
-           date1.getMonth() === date2.getMonth() &&
-           date1.getDate() === date2.getDate();
+    if (!date1 || !date2) return false;
+    return date1.getUTCFullYear() === date2.getUTCFullYear() &&
+           date1.getUTCMonth() === date2.getUTCMonth() &&
+           date1.getUTCDate() === date2.getUTCDate();
 };
 
-// --- Custom Date Parsing for Backend Strings ---
+// --- Custom Date Parsing (UTC based) ---
 const parseDateTimeString = (dateTimeStr) => {
     if (!dateTimeStr) return null;
-    const parts = dateTimeStr.split(' ');
-    if (parts.length !== 2) return new Date(dateTimeStr); 
-
-    const dateParts = parts[0].split('-').map(Number);
-    const timeParts = parts[1].split(':').map(Number);
-
-    if (dateParts.length !== 3 || timeParts.length < 2) {
-        return new Date(dateTimeStr);
+    if (dateTimeStr.length === 10 && dateTimeStr.includes('-')) {
+        const utcDate = new Date(dateTimeStr + 'T00:00:00Z');
+        return isNaN(utcDate) ? null : utcDate;
     }
-    
-    // new Date(year, monthIndex, day, hour, minute, second)
-    const seconds = timeParts.length === 3 ? timeParts[2] : 0;
-    return new Date(dateParts[0], dateParts[1] - 1, dateParts[2], timeParts[0], timeParts[1], seconds);
+    if (dateTimeStr.length === 19 && dateTimeStr.includes(' ') && dateTimeStr.includes(':')) {
+        const utcDateTime = new Date(dateTimeStr.replace(' ', 'T') + 'Z');
+        return isNaN(utcDateTime) ? null : utcDateTime;
+    }
+    const d = new Date(dateTimeStr);
+    return isNaN(d) ? null : d;
 };
 
 const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 
-// --- Student Schedule View Component (Read-Only) ---
-function ViewStudentSchedule() {
+// --- Student Schedule View Component ---
+function ViewStudentSchedule({ currentWeekStart }) {
     const [events, setEvents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()));
 
-    // Fetch and process schedule data
     useEffect(() => {
         const fetchSchedule = async () => {
-            setLoading(true);
-            setError('');
+            setLoading(true); setError('');
             try {
-                // Fetch student schedule using the new endpoint
                 const response = await apiClient.get('/student/my-schedule');
-                
                 const processedEvents = response.data.map(event => {
                     const startDate = parseDateTimeString(event.start_time);
                     const endDate = parseDateTimeString(event.end_time);
-
+                    const classDateForExtra = event.class_type === 'Extra' ? parseDateTimeString(event.class_date) : null;
+                    if (!startDate || !endDate || (event.class_type === 'Extra' && !classDateForExtra)) {
+                        console.warn("Skipping invalid event data:", event); return null;
+                    }
                     return {
-                        id: event.schedule_id,
-                        title: `${event.course_code}: ${event.course_name}`,
+                        id: event.schedule_id, title: `${event.course_code}: ${event.course_name}`,
                         details: `Professor: ${event.professor_name || 'N/A'}, Room: ${event.room_number}`,
-                        start: startDate,
-                        end: endDate,
-                        type: event.class_type, // 'Base' or 'Extra'
-                        dayOfWeek: event.day_of_week, 
-                        classDate: event.class_type === 'Extra' ? startDate : null
+                        start: startDate, end: endDate, type: event.class_type,
+                        dayOfWeek: event.day_of_week, classDate: classDateForExtra
                     };
-                });
+                }).filter(Boolean);
                 setEvents(processedEvents);
             } catch (err) {
-                console.error("Error fetching student schedule:", err);
-                setError(err.response?.data?.message || "Failed to load your class schedule.");
-                toast.error("Failed to load your schedule.");
+                setError(err.response?.data?.message || "Failed to load schedule.");
+                toast.error("Failed to load schedule.");
             } finally {
                 setLoading(false);
             }
         };
         fetchSchedule();
-    }, []); // Only runs on component mount
+    }, [currentWeekStart]);
 
-    // --- Navigation Functions ---
+    const EventItem = ({ event }) => (
+        <div className={`p-2 rounded-lg mb-2 ${event.type === 'Base' ? 'bg-indigo-50 border-indigo-300' : 'bg-yellow-50 border-yellow-400'} border shadow-sm`}>
+            <p className="font-semibold text-sm text-gray-800">{formatTime(event.start)} - {formatTime(event.end)}</p>
+            <p className="text-xs font-medium text-gray-700">{event.title}</p>
+            <p className="text-xs text-gray-600">{event.details}</p>
+            <span className={`mt-1 px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${event.type === 'Base' ? 'bg-indigo-100 text-indigo-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                {event.type}
+            </span>
+        </div>
+    );
+
+    if (loading) return <LoadingSpinner />;
+    if (error) return <ErrorMessage message={error} />;
+
+    return (
+        <div className="bg-white shadow-lg overflow-hidden sm:rounded-lg p-4 sm:p-6">
+            <div className="overflow-x-auto">
+                <div className="grid grid-cols-7 min-w-[800px] border-t border-l border-gray-200">
+                    {WEEK_DAYS.map((dayName, index) => {
+                        const currentDayDateLocal = addDays(currentWeekStart, index);
+                        const currentDayDateUTC = new Date(Date.UTC(currentDayDateLocal.getFullYear(), currentDayDateLocal.getMonth(), currentDayDateLocal.getDate()));
+                        const dayEvents = events.filter(event => {
+                            if (event.type === 'Base') return event.dayOfWeek === dayName;
+                            else return event.classDate && isSameDay(event.classDate, currentDayDateUTC);
+                        }).sort((a, b) => a.start.getTime() - b.start.getTime());
+                        const isToday = isSameDay(currentDayDateLocal, new Date());
+                        return (
+                            <div key={dayName} className="flex flex-col border-r border-b border-gray-200 min-h-[200px]">
+                                <div className={`p-2 border-b border-gray-200 ${isToday ? 'bg-indigo-50' : 'bg-gray-50'}`}>
+                                    <p className={`font-semibold text-center text-sm ${isToday ? 'text-indigo-600' : 'text-gray-700'}`}>{dayName}</p>
+                                    <p className={`text-center text-xs ${isToday ? 'text-indigo-500' : 'text-gray-500'}`}>{formatDateShort(currentDayDateLocal)}</p>
+                                </div>
+                                <div className="p-2 flex-grow overflow-y-auto">
+                                    {dayEvents.length > 0 ? dayEvents.map(event => <EventItem key={event.id} event={event} />) : <p className="text-xs text-gray-400 text-center pt-4">Free</p>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// --- Student Profile Component ---
+const InfoItem = ({ label, value }) => (
+    <div className="border-b border-gray-200 py-2 sm:py-3">
+        <p className="text-sm font-medium text-gray-500">{label}</p>
+        <p className="text-md font-semibold text-gray-900">{value || 'N/A'}</p>
+    </div>
+);
+
+function StudentProfileCard({ details, isLoading }) {
+    if (isLoading || !details) {
+        return <div className="p-6 bg-white shadow-lg rounded-lg text-center mb-6"><LoadingSpinner size="h-6 w-6" /></div>;
+    }
+    return (
+        <div className="bg-white shadow-lg overflow-hidden sm:rounded-lg p-6 mb-6">
+            <h3 className="text-xl font-bold text-indigo-700 mb-4">My Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                <InfoItem label="Name" value={details.full_name} />
+                <InfoItem label="Email" value={details.email} />
+                <InfoItem label="Branch" value={details.branch_name ? `${details.branch_name} (${details.branch_code})` : 'N/A'} />
+                <InfoItem label="Academic Group" value={`Division: ${details.division_name || 'N/A'} / Batch: ${details.batch_name || 'N/A'}`} />
+            </div>
+        </div>
+    );
+}
+
+// --- NEW: Change Password Modal (Identical to Professor's) ---
+function ChangePasswordModal({ isOpen, onClose, onSubmit }) {
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        if (newPassword !== confirmPassword) { setError("New passwords do not match."); return; }
+        if (newPassword.length < 6) { setError("New password must be at least 6 characters."); return; }
+
+        setLoading(true);
+        try {
+            await onSubmit({ currentPassword, newPassword, confirmPassword });
+            // Reset state after successful submission might be needed if modal isn't fully unmounted
+            setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
+        } catch (err) {
+            setError(err.message || "Failed to change password.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Reset fields when modal opens/closes
+     useEffect(() => {
+        if (!isOpen) {
+             setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setError(''); setLoading(false);
+        }
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex justify-center items-center p-4">
+            <div className="relative bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+                <h2 className="text-xl font-bold mb-6 text-gray-800">Change Password</h2>
+                {error && <ErrorMessage message={error} />}
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <InputField label="Current Password" type="password" name="currentPassword" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
+                    <InputField label="New Password" type="password" name="newPassword" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
+                    <InputField label="Confirm New Password" type="password" name="confirmPassword" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+                    <div className="flex justify-end space-x-3 mt-6">
+                        <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>Cancel</Button>
+                        <Button type="submit" variant="primary" disabled={loading}>{loading ? <LoadingSpinner size="h-5 w-5"/> : "Update Password"}</Button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+// --- NEW: Dropdown Menu Component (Identical to Professor's) ---
+function DropdownMenu({ onLogout, onChangePassword }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef(null);
+
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setIsOpen(false);
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [dropdownRef]);
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <button onClick={() => setIsOpen(!isOpen)} className="p-2 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" aria-label="User menu" aria-haspopup="true">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+            </button>
+            {isOpen && (
+                <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-20" role="menu" aria-orientation="vertical" tabIndex="-1">
+                    <button onClick={() => { onChangePassword(); setIsOpen(false); }} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left" role="menuitem" tabIndex="-1">Change Password</button>
+                    <button onClick={() => { onLogout(); setIsOpen(false); }} className="block px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full text-left" role="menuitem" tabIndex="-1">Logout</button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+
+// --- Main App Component ---
+function StudentDashboard() {
+    const navigate = useNavigate();
+    const [userData, setUserData] = useState(null);
+    const [studentDetails, setStudentDetails] = useState(null);
+    const [loadingDetails, setLoadingDetails] = useState(true);
+    const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()));
+    const [isModalOpen, setIsModalOpen] = useState(false); // State for modal
+
+    // --- Authentication & Authorization Check ---
+    useEffect(() => {
+        const token = getAuthToken();
+        const storedUserData = localStorage.getItem('userData');
+        if (!token || !storedUserData) {
+            navigate('/login'); return;
+        }
+        try {
+            const parsedData = JSON.parse(storedUserData);
+            if (parsedData.role !== 'Student') {
+                toast.error('Access Denied: Students only.');
+                navigate('/login');
+            } else {
+                setUserData(parsedData);
+            }
+        } catch (error) {
+            localStorage.clear(); navigate('/login');
+        }
+    }, [navigate]);
+
+    // --- Fetch Student Profile Details ---
+    useEffect(() => {
+        if (userData) {
+            const fetchStudentDetails = async () => {
+                setLoadingDetails(true);
+                try {
+                    const response = await apiClient.get('/student/my-details');
+                    setStudentDetails(response.data);
+                } catch (err) {
+                    toast.error("Could not load profile info.");
+                } finally {
+                    setLoadingDetails(false);
+                }
+            };
+            fetchStudentDetails();
+        }
+    }, [userData]);
+
+    const handleLogout = () => {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userData');
+        navigate('/login');
+    };
+
+    // --- NEW: Handle Password Change Submission ---
+    const handlePasswordChange = async (passwords) => {
+        // Wrap the API call in a promise to handle errors in the modal
+        return new Promise(async (resolve, reject) => {
+            try {
+                const response = await apiClient.put('/user/change-password', passwords);
+                toast.success(response.data.message || 'Password changed successfully!');
+                setIsModalOpen(false); // Close modal on success
+                // Optionally force logout
+                // handleLogout();
+                resolve();
+            } catch (err) {
+                console.error("Password change error:", err);
+                const message = err.response?.data?.message || 'Failed to change password.';
+                reject(new Error(message));
+            }
+        });
+    };
+
+    // --- Week Navigation Handlers ---
     const goToPreviousWeek = () => { setCurrentWeekStart(addDays(currentWeekStart, -7)); };
     const goToNextWeek = () => { setCurrentWeekStart(addDays(currentWeekStart, 7)); };
     const goToToday = () => { setCurrentWeekStart(getStartOfWeek(new Date())); };
 
-
-    // --- Calendar Header (READ-ONLY) ---
+    // --- Calendar Header Component ---
     const CalendarHeader = () => {
         const endDate = addDays(currentWeekStart, 6);
         return (
             <div className="flex items-center justify-between mb-4 px-2">
                 <h2 className="text-xl font-semibold text-gray-800">
-                    {currentWeekStart.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}
-                    {' - '}
-                    {endDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
+                    {currentWeekStart.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - {endDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                 </h2>
                 <div className="flex space-x-2">
                     <Button variant="secondary" className="px-3 py-1.5 text-sm" onClick={goToPreviousWeek}>&larr; Prev</Button>
@@ -192,100 +428,6 @@ function ViewStudentSchedule() {
         );
     };
 
-    // --- Event Component ---
-    const EventItem = ({ event }) => (
-        <div className={`p-2 rounded-lg mb-2 ${event.type === 'Base' ? 'bg-blue-100 border-blue-300' : 'bg-green-100 border-green-300'} border`}>
-            <p className="font-semibold text-sm text-gray-800">{formatTime(event.start)} - {formatTime(event.end)}</p>
-            <p className="text-xs font-medium text-gray-700">{event.title}</p>
-            <p className="text-xs text-gray-600">{event.details}</p>
-            <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${event.type === 'Base' ? 'bg-blue-200 text-blue-800' : 'bg-green-200 text-green-800'}`}>
-                {event.type}
-            </span>
-        </div>
-    );
-
-    // --- Render Logic ---
-    if (loading) return <LoadingSpinner />;
-    if (error) return <ErrorMessage message={error} />;
-    
-    // Calendar Grid Rendering Logic (Copied from Professor's View)
-    return (
-        <div className="bg-white shadow-lg overflow-hidden sm:rounded-lg p-4 sm:p-6">
-            <CalendarHeader />
-            
-            <div className="grid grid-cols-1 sm:grid-cols-7 border-t border-l border-gray-200">
-                {WEEK_DAYS.map((dayName, index) => {
-                    const currentDayDate = addDays(currentWeekStart, index);
-                    
-                    const dayEvents = events.filter(event => {
-                        if (event.type === 'Base') {
-                            return event.dayOfWeek === dayName;
-                        } else {
-                            return event.classDate && isSameDay(event.classDate, currentDayDate);
-                        }
-                    }).sort((a, b) => a.start - b.start);
-
-                    const isToday = isSameDay(currentDayDate, new Date());
-
-                    return (
-                        <div key={dayName} className="flex flex-col border-r border-b border-gray-200 min-h-[200px]">
-                            <div className={`p-2 border-b border-gray-200 ${isToday ? 'bg-indigo-50' : 'bg-gray-50'}`}>
-                                <p className={`font-semibold text-center text-sm ${isToday ? 'text-indigo-600' : 'text-gray-700'}`}>
-                                    {dayName}
-                                </p>
-                                <p className={`text-center text-xs ${isToday ? 'text-indigo-500' : 'text-gray-500'}`}>
-                                    {formatDateShort(currentDayDate)}
-                                </p>
-                            </div>
-                            
-                            <div className="p-2 flex-grow overflow-y-auto">
-                                {dayEvents.length > 0 ? (
-                                    dayEvents.map(event => <EventItem key={event.id} event={event} />)
-                                ) : (
-                                    <p className="text-xs text-gray-400 text-center pt-4">No classes</p>
-                                )}
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-}
-
-// --- Main App Component ---
-function StudentDashboard() {
-    const navigate = useNavigate();
-    const [userData, setUserData] = useState(null);
-
-    // --- Authentication & Authorization Check ---
-    useEffect(() => {
-        const token = getAuthToken();
-        const storedUserData = localStorage.getItem('userData');
-        if (!token || !storedUserData) {
-            console.log("No token or user data, redirecting to login.");
-            navigate('/login'); return;
-        }
-        try {
-            const parsedData = JSON.parse(storedUserData);
-            if (parsedData.role !== 'Student') {
-                console.warn("Access Denied: Not a Student.");
-                toast.error('Access Denied: This area is for Students only.');
-                navigate('/login');
-            } else {
-                setUserData(parsedData);
-            }
-        } catch (error) {
-            console.error("Error parsing user data:", error);
-            localStorage.clear(); navigate('/login');
-        }
-    }, [navigate]);
-
-    const handleLogout = () => {
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('userData');
-        navigate('/login');
-    };
 
     if (!userData) {
         return <div className="min-h-screen flex items-center justify-center bg-gray-100"><LoadingSpinner size="h-12 w-12"/></div>;
@@ -299,24 +441,46 @@ function StudentDashboard() {
             <header className="bg-white shadow-md sticky top-0 z-10">
                  <div className="max-w-7xl mx-auto py-3 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
                     <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-                        <svg className="w-8 h-8 mr-2 text-indigo-600" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span className="text-indigo-600">NoClash</span> <span className="text-gray-500 font-medium ml-2">- Student</span>
+                        <div className="w-10 h-10 mr-2 rounded-md bg-white p-1 flex items-center justify-center border border-gray-200">
+                            <img src={logo} alt="NoClash" className="w-full h-full object-contain" />
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-indigo-600">NoClash</span>
+                            <span className="text-gray-500 font-medium text-sm">- Student</span>
+                        </div>
                     </h1>
+                    {/* --- UPDATED HEADER SECTION --- */}
                     <div className="flex items-center space-x-4">
                         <span className="text-sm text-gray-600 hidden sm:inline">Welcome, {userData.full_name}!</span>
-                        <Button onClick={handleLogout} variant="danger" className="text-xs px-3 py-1.5">
-                            Logout
-                        </Button>
+                         {/* --- Dropdown Menu --- */}
+                        <DropdownMenu
+                            onLogout={handleLogout}
+                            onChangePassword={() => setIsModalOpen(true)}
+                        />
                     </div>
                  </div>
             </header>
 
             <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-                <h2 className="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">My Weekly Timetable</h2>
-                <ViewStudentSchedule />
+                {/* --- Student Profile Card --- */}
+                <StudentProfileCard details={studentDetails} isLoading={loadingDetails} />
+
+                <h2 className="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">My Weekly Timetable</h2>
+                {/* --- Calendar Header --- */}
+                <CalendarHeader /> 
+                 {/* --- Schedule View --- */}
+                <ViewStudentSchedule currentWeekStart={currentWeekStart} />
             </main>
+
+             {/* --- Render Change Password Modal --- */}
+            <ChangePasswordModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSubmit={handlePasswordChange}
+            />
         </div>
     );
 }
 
 export default StudentDashboard;
+

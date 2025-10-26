@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
+import { Toaster, toast } from 'react-hot-toast'; // Import toast
+import logo from '../../Utils/logo.png';
 
 // --- Reusable Components (Ideally move to src/components later) ---
 const InputField = ({ id, label, type = 'text', value, onChange, required = true, placeholder = '', error, autoComplete = "off" }) => (
@@ -11,7 +13,7 @@ const InputField = ({ id, label, type = 'text', value, onChange, required = true
         <input
             type={type}
             id={id}
-            name={id}
+            name={id} // Ensure name matches id for handleChange
             value={value}
             onChange={onChange}
             required={required}
@@ -30,7 +32,7 @@ const SelectField = ({ id, label, value, onChange, required = true, options = []
         </label>
         <select
             id={id}
-            name={id}
+            name={id} // Ensure name matches id for handleChange
             value={value}
             onChange={onChange}
             required={required}
@@ -72,8 +74,14 @@ const API_BASE_URL = 'http://localhost:4000/api'; // Ensure this matches your ba
 function RegisterPage() {
     const [step, setStep] = useState(1);
     const [formData, setFormData] = useState({
-        role: '', full_name: '', email: '', password: '', confirmPassword: '',
-        branch_id: '', division_id: '', batch_id: '',
+        role: '',
+        fullName: '',
+        email: '',
+        password: '',
+        confirmPassword: '',
+        branchId: '',
+        divisionId: '',
+        batchId: '',
     });
     const [errors, setErrors] = useState({});
     const [apiError, setApiError] = useState('');
@@ -92,130 +100,206 @@ function RegisterPage() {
             try {
                 const response = await axios.get(`${API_BASE_URL}/branches`);
                 setBranches(response.data.map(branch => ({ value: branch.branch_id, label: `${branch.branch_name} (${branch.branch_code})` })));
-            } catch (error) { console.error("Error fetching branches:", error); setApiError("Could not load branch data."); }
-            finally { setLoadingDropdowns(false); }
+            } catch (error) {
+                 console.error("Error fetching branches:", error);
+                 setApiError("Could not load branch data. Please ensure the backend server is running and accessible.");
+                 toast.error("Could not load branch data."); // Add toast
+            } finally {
+                 setLoadingDropdowns(false);
+            }
         };
         fetchBranches();
     }, []);
 
-    // Fetch divisions when branch_id changes
+     // Fetch divisions when branchId changes
     useEffect(() => {
         const fetchDivisions = async () => {
-            if (!formData.branch_id) { setDivisions([]); setFormData(prev => ({ ...prev, division_id: '', batch_id: '' })); return; }
-            setLoadingDropdowns(true); setFormData(prev => ({ ...prev, division_id: '', batch_id: '' }));
+            if (!formData.branchId) {
+                setDivisions([]); setBatches([]);
+                setFormData(prev => ({ ...prev, divisionId: '', batchId: '' }));
+                return;
+            }
+            setLoadingDropdowns(true);
+            setFormData(prev => ({ ...prev, divisionId: '', batchId: '' }));
             try {
-                // --- TODO: Replace with actual API call: GET /api/divisions?branchId=... ---
-                const allDivisionsPlaceholder = [ /* See previous example */
-                    { value: 1, label: 'A', branch_id: 1 }, { value: 2, label: 'B', branch_id: 1 }, { value: 3, label: 'C', branch_id: 1 }, { value: 4, label: 'D', branch_id: 1 },
-                    { value: 5, label: 'A', branch_id: 2 }, { value: 6, label: 'B', branch_id: 2 }, { value: 7, label: 'C', branch_id: 2 }, { value: 8, label: 'D', branch_id: 2 },
-                    { value: 9, label: 'A', branch_id: 3 }, { value: 10, label: 'B', branch_id: 3 }, { value: 11, label: 'C', branch_id: 3 }, { value: 12, label: 'D', branch_id: 3 },
-                    { value: 13, label: 'A', branch_id: 4 }, { value: 14, label: 'B', branch_id: 4 }, { value: 15, label: 'C', branch_id: 4 }, { value: 16, label: 'D', branch_id: 4 },
-                    { value: 17, label: 'A', branch_id: 5 }, { value: 18, label: 'B', branch_id: 5 }, { value: 19, label: 'C', branch_id: 5 }, { value: 20, label: 'D', branch_id: 5 },
-                ];
-                const filteredDivisions = allDivisionsPlaceholder.filter(d => d.branch_id === parseInt(formData.branch_id)).map(d => ({ value: d.value, label: d.label }));
-                setDivisions(filteredDivisions);
-                // --- End Placeholder ---
-            } catch (error) { console.error("Error fetching divisions:", error); setApiError("Could not load division data."); }
-            finally { setLoadingDropdowns(false); }
+                // --- TEMPORARILY COMMENTED OUT - Requires dedicated public endpoint ---
+                // const response = await axios.get(`${API_BASE_URL}/divisions?branchId=${formData.branchId}`);
+                // setDivisions(response.data.map(d => ({ value: d.division_id, label: d.division_name })));
+                console.warn("Division fetching is disabled. Requires a public '/api/divisions' endpoint.");
+                setDivisions([]); // Keep dropdown empty for now
+                // --- END TEMPORARY ---
+            } catch (error) {
+                 console.error("Error fetching divisions:", error);
+                 setApiError("Could not load division data.");
+                 toast.error("Could not load division data.");
+            } finally {
+                 setLoadingDropdowns(false);
+            }
         };
-        fetchDivisions();
-    }, [formData.branch_id]);
+        // Only run if branchId is selected
+        if (formData.branchId) {
+            fetchDivisions();
+        } else {
+             // Clear divisions if branchId is deselected
+             setDivisions([]);
+             setBatches([]);
+        }
+    }, [formData.branchId]);
 
-    // Fetch batches when division_id changes
+    // Fetch batches when divisionId changes
     useEffect(() => {
         const fetchBatches = async () => {
-             if (!formData.division_id) { setBatches([]); setFormData(prev => ({ ...prev, batch_id: '' })); return; }
-             setLoadingDropdowns(true); setFormData(prev => ({ ...prev, batch_id: '' }));
+             if (!formData.divisionId) {
+                 setBatches([]);
+                 setFormData(prev => ({ ...prev, batchId: '' }));
+                 return;
+            }
+             setLoadingDropdowns(true);
+             setFormData(prev => ({ ...prev, batchId: '' }));
             try {
-                // --- TODO: Replace with actual API call: GET /api/batches?divisionId=... ---
-                 const allBatchesPlaceholder = [ /* See previous example */
-                    { value: 1, label: 'B1', division_id: 1 }, { value: 2, label: 'B2', division_id: 1 }, { value: 3, label: 'B3', division_id: 1 }, { value: 4, label: 'B1', division_id: 2 }, { value: 5, label: 'B2', division_id: 2 }, { value: 6, label: 'B3', division_id: 2 }, { value: 7, label: 'B1', division_id: 3 }, { value: 8, label: 'B2', division_id: 3 }, { value: 9, label: 'B3', division_id: 3 }, { value: 10, label: 'B1', division_id: 4 }, { value: 11, label: 'B2', division_id: 4 }, { value: 12, label: 'B3', division_id: 4 }, { value: 13, label: 'B1', division_id: 5 }, { value: 14, label: 'B2', division_id: 5 }, { value: 15, label: 'B3', division_id: 5 }, { value: 16, label: 'B1', division_id: 6 }, { value: 17, label: 'B2', division_id: 6 }, { value: 18, label: 'B3', division_id: 6 }, { value: 19, label: 'B1', division_id: 7 }, { value: 20, label: 'B2', division_id: 7 }, { value: 21, label: 'B3', division_id: 7 }, { value: 22, label: 'B1', division_id: 8 }, { value: 23, label: 'B2', division_id: 8 }, { value: 24, label: 'B3', division_id: 8 }, { value: 25, label: 'B1', division_id: 9 }, { value: 26, label: 'B2', division_id: 9 }, { value: 27, label: 'B3', division_id: 9 }, { value: 28, label: 'B1', division_id: 10 }, { value: 29, label: 'B2', division_id: 10 }, { value: 30, label: 'B3', division_id: 10 }, { value: 31, label: 'B1', division_id: 11 }, { value: 32, label: 'B2', division_id: 11 }, { value: 33, label: 'B3', division_id: 11 }, { value: 34, label: 'B1', division_id: 12 }, { value: 35, label: 'B2', division_id: 12 }, { value: 36, label: 'B3', division_id: 12 }, { value: 37, label: 'B1', division_id: 13 }, { value: 38, label: 'B2', division_id: 13 }, { value: 39, label: 'B3', division_id: 13 }, { value: 40, label: 'B1', division_id: 14 }, { value: 41, label: 'B2', division_id: 14 }, { value: 42, label: 'B3', division_id: 14 }, { value: 43, label: 'B1', division_id: 15 }, { value: 44, label: 'B2', division_id: 15 }, { value: 45, label: 'B3', division_id: 15 }, { value: 46, label: 'B1', division_id: 16 }, { value: 47, label: 'B2', division_id: 16 }, { value: 48, label: 'B3', division_id: 16 }, { value: 49, label: 'B1', division_id: 17 }, { value: 50, label: 'B2', division_id: 17 }, { value: 51, label: 'B3', division_id: 17 }, { value: 52, label: 'B1', division_id: 18 }, { value: 53, label: 'B2', division_id: 18 }, { value: 54, label: 'B3', division_id: 18 }, { value: 55, label: 'B1', division_id: 19 }, { value: 56, label: 'B2', division_id: 19 }, { value: 57, label: 'B3', division_id: 19 }, { value: 58, label: 'B1', division_id: 20 }, { value: 59, label: 'B2', division_id: 20 }, { value: 60, label: 'B3', division_id: 20 }
-                 ];
-                const filteredBatches = allBatchesPlaceholder.filter(b => b.division_id === parseInt(formData.division_id)).map(b => ({ value: b.value, label: b.label }));
-                setBatches(filteredBatches);
-                 // --- End Placeholder ---
-            } catch (error) { console.error("Error fetching batches:", error); setApiError("Could not load batch data."); }
-            finally { setLoadingDropdowns(false); }
+                 // --- TEMPORARILY COMMENTED OUT - Requires dedicated public endpoint ---
+                // const response = await axios.get(`${API_BASE_URL}/batches?divisionId=${formData.divisionId}`);
+                // setBatches(response.data.map(b => ({ value: b.batch_id, label: b.batch_name })));
+                console.warn("Batch fetching is disabled. Requires a public '/api/batches' endpoint.");
+                setBatches([]); // Keep dropdown empty for now
+                 // --- END TEMPORARY ---
+            } catch (error) {
+                 console.error("Error fetching batches:", error);
+                 setApiError("Could not load batch data.");
+                 toast.error("Could not load batch data.");
+            } finally {
+                 setLoadingDropdowns(false);
+            }
         };
-        fetchBatches();
-    }, [formData.division_id]);
+        // Only run if divisionId is selected
+        if (formData.divisionId) {
+            fetchBatches();
+        } else {
+            // Clear batches if divisionId is deselected
+             setBatches([]);
+        }
+    }, [formData.divisionId]);
 
     // --- Form Handling ---
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
         if (errors[name]) setErrors(prev => ({ ...prev, [name]: undefined }));
-        if (name === 'branch_id') { setFormData(prev => ({ ...prev, division_id: '', batch_id: '' })); setDivisions([]); setBatches([]); }
-        else if (name === 'division_id') { setFormData(prev => ({ ...prev, batch_id: '' })); setBatches([]); }
+
+        // Reset logic remains the same
+        if (name === 'branchId') {
+            setFormData(prev => ({ ...prev, divisionId: '', batchId: '' }));
+            // No need to clear state here, useEffect handles it
+        } else if (name === 'divisionId') {
+            setFormData(prev => ({ ...prev, batchId: '' }));
+             // No need to clear state here, useEffect handles it
+        }
     };
 
-    const validateStep = () => { /* ... (same validation logic as before) ... */
+    const validateStep = () => {
         const newErrors = {};
         if (step === 1) { if (!formData.role) newErrors.role = 'Please select a role.'; }
         else if (step === 2) {
-            if (!formData.full_name.trim()) newErrors.full_name = 'Full name is required.';
+            if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required.';
             if (!formData.email.trim()) newErrors.email = 'Email is required.';
             else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Email address is invalid.';
             if (!formData.password) newErrors.password = 'Password is required.';
             else if (formData.password.length < 6) newErrors.password = 'Password must be at least 6 characters long.';
             if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match.';
         } else if (step === 3 && formData.role === 'Student') {
-            if (!formData.branch_id) newErrors.branch_id = 'Branch selection is required.';
-            if (!formData.division_id) newErrors.division_id = 'Division selection is required.';
-            if (!formData.batch_id) newErrors.batch_id = 'Batch selection is required.';
+             // Temporarily disable validation for dropdowns until API exists
+            // if (!formData.branchId) newErrors.branchId = 'Branch selection is required.';
+            // if (!formData.divisionId) newErrors.divisionId = 'Division selection is required.';
+            // if (!formData.batchId) newErrors.batchId = 'Batch selection is required.';
+             console.log("Skipping step 3 validation until dropdown APIs are implemented.");
         }
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
 
     const nextStep = () => { if (validateStep()) { setApiError(''); if (step === 1 && formData.role === 'Professor') setStep(2); else if (step < 3) setStep(step + 1); } };
-    const prevStep = () => { setApiError(''); if (step > 1) setStep(step - 1); };
+    const prevStep = () => { setApiError(''); if (step > 1) { setErrors({}); setStep(step - 1); } };
 
     const handleRegister = async () => {
-        if (!validateStep()) return;
+        // Re-validate final step before submitting
+        if (!validateStep()) {
+             // Highlight validation errors if any exist
+             toast.error("Please correct the errors in the form.");
+             return;
+        }
+
+         // Add specific check for student academic details if APIs were enabled
+         if (formData.role === 'Student' && (!formData.branchId || !formData.divisionId || !formData.batchId)) {
+             // This check will only be relevant once dropdowns are functional
+              setApiError('Branch, Division, and Batch are required for student registration.');
+              toast.error('Branch, Division, and Batch are required for student registration.');
+              setStep(3); // Go back to step 3 if student details are missing
+              return;
+         }
+
+
         setApiError(''); setLoading(true);
+
         const payload = {
-            full_name: formData.full_name, email: formData.email, password: formData.password, role: formData.role,
-            batch_id: (formData.role === 'Student' && formData.batch_id) ? parseInt(formData.batch_id) : null,
+            fullName: formData.fullName,
+            email: formData.email,
+            password: formData.password,
+            role: formData.role,
+            // Only include these if they have values (i.e., student role and selected)
+            branchId: formData.branchId ? parseInt(formData.branchId) : null,
+            divisionId: formData.divisionId ? parseInt(formData.divisionId) : null,
+            batchId: formData.batchId ? parseInt(formData.batchId) : null,
         };
+
+         // Clean payload for Professor role
+         if (payload.role === 'Professor') {
+             delete payload.branchId;
+             delete payload.divisionId;
+             delete payload.batchId;
+         }
+
+        console.log("Sending Payload:", payload);
+
         try {
             const response = await axios.post(`${API_BASE_URL}/register`, payload);
             console.log('Registration successful:', response.data);
-            alert('Registration successful! Your account is pending admin approval.');
+            toast.success('Registration successful! Waiting for admin approval.', { duration: 5000 });
             navigate('/login');
         } catch (err) {
             console.error('Registration error details:', err);
-             if (err.response) setApiError(err.response.data.message || 'Registration failed.');
-             else if (err.request) setApiError('Network error. Could not reach server.');
-             else setApiError('An unexpected error occurred.');
+             const message = err.response?.data?.message || 'Registration failed. Please check details or try again later.';
+             setApiError(message);
+             toast.error(message);
         } finally { setLoading(false); }
     };
 
     // --- Render Logic ---
     const renderStepContent = () => {
         switch (step) {
-            case 1: return ( /* ... Role selection ... */
+            case 1: return (
                  <>
                     <h3 className="text-xl font-semibold text-gray-800 mb-6 text-center">Step 1: Choose Role</h3>
                     <SelectField id="role" label="Registering as a" value={formData.role} onChange={handleChange} options={[{ value: 'Professor', label: 'Professor' }, { value: 'Student', label: 'Student' }]} placeholder="Select role..." error={errors.role} />
                  </>
             );
-            case 2: return ( /* ... Common details ... */
+            case 2: return (
                  <>
                     <h3 className="text-xl font-semibold text-gray-800 mb-6 text-center">Step 2: Account Details</h3>
-                    <InputField id="full_name" label="Full Name" value={formData.full_name} onChange={handleChange} placeholder="Enter full name" error={errors.full_name} />
+                    <InputField id="fullName" label="Full Name" value={formData.fullName} onChange={handleChange} placeholder="Enter full name" error={errors.fullName} />
                     <InputField id="email" label="Email Address" type="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" error={errors.email} autoComplete="email" />
                     <InputField id="password" label="Password" type="password" value={formData.password} onChange={handleChange} placeholder="Min. 6 characters" error={errors.password} autoComplete="new-password"/>
                     <InputField id="confirmPassword" label="Confirm Password" type="password" value={formData.confirmPassword} onChange={handleChange} placeholder="Re-enter password" error={errors.confirmPassword} autoComplete="new-password"/>
                  </>
             );
-            case 3: if (formData.role !== 'Student') return null; return ( /* ... Student details ... */
+            case 3: if (formData.role !== 'Student') return null; return (
                  <>
                     <h3 className="text-xl font-semibold text-gray-800 mb-6 text-center">Step 3: Academic Details</h3>
-                    <SelectField id="branch_id" label="Branch" value={formData.branch_id} onChange={handleChange} options={branches} placeholder="Select branch..." error={errors.branch_id} disabled={loadingDropdowns} />
-                    <SelectField id="division_id" label="Division" value={formData.division_id} onChange={handleChange} options={divisions} placeholder={!formData.branch_id ? "Select branch first" : (loadingDropdowns ? "Loading..." : "Select division...")} error={errors.division_id} disabled={!formData.branch_id || loadingDropdowns} />
-                    <SelectField id="batch_id" label="Batch" value={formData.batch_id} onChange={handleChange} options={batches} placeholder={!formData.division_id ? "Select division first" : (loadingDropdowns ? "Loading..." : "Select batch...")} error={errors.batch_id} disabled={!formData.division_id || loadingDropdowns} />
-                    {loadingDropdowns && <p className="text-sm text-gray-500 text-center">Loading options...</p>}
+                    <SelectField id="branchId" label="Branch" value={formData.branchId} onChange={handleChange} options={branches} placeholder="Select branch..." error={errors.branchId} disabled={loadingDropdowns} />
+                    {/* Display note about API requirement */}
+                     <p className="text-xs text-orange-600 mb-2">*Division & Batch dropdowns require backend API implementation.</p>
+                    <SelectField id="divisionId" label="Division" value={formData.divisionId} onChange={handleChange} options={divisions} placeholder={!formData.branchId ? "Select branch first" : (loadingDropdowns ? "Loading..." : "Select division...")} error={errors.divisionId} disabled={!formData.branchId || loadingDropdowns || divisions.length === 0} />
+                    <SelectField id="batchId" label="Batch" value={formData.batchId} onChange={handleChange} options={batches} placeholder={!formData.divisionId ? "Select division first" : (loadingDropdowns ? "Loading..." : "Select batch...")} error={errors.batchId} disabled={!formData.divisionId || loadingDropdowns || batches.length === 0} />
+                    {loadingDropdowns && <div className="flex justify-center"><Spinner/></div>}
                  </>
             );
             default: return null;
@@ -225,20 +309,30 @@ function RegisterPage() {
      let nextButtonText = 'Next';
      const isFinalSubmitStep = (step === 2 && formData.role === 'Professor') || (step === 3 && formData.role === 'Student');
      if (isFinalSubmitStep) nextButtonText = 'Register';
-     else if (step === 1 && formData.role === 'Professor') nextButtonText = 'Next'; // Explicitly set for Prof step 1->2
+     else if (step === 1 && formData.role === 'Professor') nextButtonText = 'Next';
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-100 via-white to-teal-100 font-sans p-4">
-            <div className="w-full max-w-lg bg-white rounded-lg shadow-xl p-8 border border-gray-200">
-                <h2 className="text-3xl font-bold text-center text-teal-700 mb-4">Create Account</h2>
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-100 via-white to-purple-100 font-sans p-6">
+             <Toaster position="top-right" />
+            <div className="w-full max-w-lg bg-white rounded-xl shadow-lg p-8 sm:p-10 border border-gray-200">
+                <div className="flex items-center justify-center mb-4">
+                    <div className="w-20 h-20 mr-3 rounded-md bg-white p-2 shadow-md flex items-center justify-center border border-gray-200">
+                        <img src={logo} alt="NoClash Logo" className="w-full h-full object-contain" />
+                    </div>
+                    <div className="text-center">
+                        <h2 className="text-2xl font-bold text-gray-800">NoClash</h2>
+                        <p className="text-sm text-indigo-600 font-medium">Timetable Conflict Checker</p>
+                    </div>
+                </div>
+                <h2 className="text-2xl font-semibold text-gray-700 mb-4 text-center">Create Account</h2>
                 {/* Progress Indicator */}
-                <div className="mb-8 flex justify-center items-center space-x-2 sm:space-x-4 px-2">
+             <div className="mb-8 flex justify-center items-center space-x-2 sm:space-x-4 px-2">
                      {['Role', 'Details', formData.role === 'Student' ? 'Academic' : null].filter(Boolean).map((stepName, index) => (
                         <React.Fragment key={index}>
                            {index > 0 && <div className={`flex-1 h-1 rounded ${step > index ? 'bg-teal-500' : 'bg-gray-300'}`}></div>}
                             <div className="flex flex-col items-center flex-shrink-0">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step >= index + 1 ? 'bg-teal-600 text-white' : 'bg-gray-300 text-gray-600'}`}> {index + 1} </div>
-                                <span className={`mt-1 text-xs text-center ${step >= index + 1 ? 'text-teal-700 font-medium' : 'text-gray-500'}`}>{stepName}</span>
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step >= index + 1 ? 'bg-indigo-600 text-white' : 'bg-gray-300 text-gray-600'}`}> {index + 1} </div>
+                                <span className={`mt-1 text-xs text-center ${step >= index + 1 ? 'text-indigo-700 font-medium' : 'text-gray-500'}`}>{stepName}</span>
                             </div>
                         </React.Fragment>
                     ))}
@@ -248,12 +342,21 @@ function RegisterPage() {
                 {/* Navigation Buttons */}
                 <div className="mt-8 flex justify-between items-center">
                     <button type="button" onClick={prevStep} disabled={step === 1 || loading} className="px-5 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium rounded-md shadow-sm transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed"> Back </button>
-                    <button type="button" onClick={isFinalSubmitStep ? handleRegister : nextStep} disabled={loading || (step === 1 && !formData.role)} className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-md shadow-sm transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[80px]"> {loading ? <Spinner /> : nextButtonText } </button>
+                    <button
+                        type="button"
+                        onClick={isFinalSubmitStep ? handleRegister : nextStep}
+                        // Disable Register/Next if dropdowns are loading OR if student is on final step but required fields are missing (after APIs are implemented)
+                        disabled={loading || loadingDropdowns || (step === 1 && !formData.role) /* || (isFinalSubmitStep && formData.role === 'Student' && (!formData.branchId || !formData.divisionId || !formData.batchId)) */}
+                        className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md shadow-sm transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[80px]"
+                    >
+                         {loading ? <Spinner /> : nextButtonText }
+                    </button>
                 </div>
-                <p className="mt-6 text-center text-sm text-gray-600"> Already have an account?{' '} <Link to="/login" className="font-medium text-teal-600 hover:text-teal-500"> Sign in </Link> </p>
+                <p className="mt-6 text-center text-sm text-gray-600"> Already have an account?{' '} <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500"> Sign in </Link> </p>
             </div>
         </div>
     );
 }
 
-export default RegisterPage; // Export the component
+export default RegisterPage;
+

@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'; // Added useRef
+import logo from '../../Utils/logo.png';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-// import DatePicker from 'react-datepicker'; // Removed: Incompatible with this environment
 import { Toaster, toast } from 'react-hot-toast';
-// import 'react-datepicker/dist/react-datepicker.css'; // Removed: Incompatible with this environment
 
 // --- API Base URL & Helpers ---
-const API_BASE_URL = 'http://localhost:4000/api'; // Ensure this matches your backend
+const API_BASE_URL = 'http://localhost:4000/api';
 
 const getAuthToken = () => localStorage.getItem('authToken');
 
@@ -29,7 +28,7 @@ apiClient.interceptors.request.use((config) => {
     return Promise.reject(error);
 });
 
-// --- Reusable UI Components (from AdminDashboard) ---
+// --- Reusable UI Components ---
 
 const LoadingSpinner = ({ size = 'h-8 w-8' }) => (
     <div className="flex justify-center items-center py-10">
@@ -63,26 +62,25 @@ const SelectField = ({ label, name, id, value, onChange, children, required = tr
     </div>
 );
 
-// --- NEW: Reusable InputField (for Date/Time) ---
-const InputField = ({ label, name, id, type = 'text', value, onChange, required = true, disabled = false, min = null }) => (
+const InputField = ({ label, name, id, type = 'text', value, onChange, placeholder, required = true, disabled = false, error = null }) => (
     <div className="mb-4">
         <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor={id || name}>
             {label} {required && <span className="text-red-500">*</span>}
         </label>
         <input
-            className={`shadow-sm appearance-none border border-gray-300 rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition duration-150 ease-in-out ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+            className={`shadow-sm appearance-none border ${error ? 'border-red-500' : 'border-gray-300'} rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 ${error ? 'focus:ring-red-500' : 'focus:ring-indigo-500'} focus:border-transparent transition duration-150 ease-in-out ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
             id={id || name}
             name={name}
             type={type}
+            placeholder={placeholder || label}
             value={value}
             onChange={onChange}
             required={required}
             disabled={disabled}
-            min={min}
         />
+        {error && <p className="text-red-500 text-xs italic mt-1">{error}</p>}
     </div>
 );
-
 
 const Button = ({ children, onClick, type = 'button', variant = 'primary', disabled = false, className = '', ...props }) => {
     const baseStyle = "font-bold py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition duration-150 ease-in-out shadow-sm disabled:opacity-50 disabled:cursor-not-allowed";
@@ -91,10 +89,12 @@ const Button = ({ children, onClick, type = 'button', variant = 'primary', disab
         case 'primary':
             variantStyle = 'bg-indigo-600 hover:bg-indigo-700 text-white focus:ring-indigo-500';
             break;
-        // ... other variants if needed
         case 'danger':
             variantStyle = 'bg-red-600 hover:bg-red-700 text-white focus:ring-red-500';
             break;
+        case 'secondary':
+             variantStyle = 'bg-gray-200 hover:bg-gray-300 text-gray-700 focus:ring-gray-400';
+             break;
         default:
              variantStyle = 'bg-indigo-600 hover:bg-indigo-700 text-white focus:ring-indigo-500';
     }
@@ -111,38 +111,487 @@ const Button = ({ children, onClick, type = 'button', variant = 'primary', disab
     );
 };
 
-// --- Professor Dashboard Component ---
+
+// --- Date Helper Functions ---
+const addDays = (date, days) => {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    return result;
+};
+
+// Sets Monday as the start of the week
+const getStartOfWeek = (date) => {
+    const d = new Date(date);
+    const day = d.getDay(); // 0 = Sunday, 1 = Monday
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+    d.setHours(0, 0, 0, 0); // Set to start of the day
+    return new Date(d.setDate(diff));
+};
+
+const formatDateShort = (date) => {
+    return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+};
+
+const formatTime = (date) => {
+    if (!date || isNaN(date)) return 'Invalid Time';
+    // Display time in local timezone
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+};
+
+const isSameDay = (date1, date2) => {
+    if (!date1 || !date2) return false;
+    // Compare year, month, and day in UTC to avoid timezone issues with comparisons
+    return date1.getUTCFullYear() === date2.getUTCFullYear() &&
+           date1.getUTCMonth() === date2.getUTCMonth() &&
+           date1.getUTCDate() === date2.getUTCDate();
+};
+
+// --- Custom Date Parsing for Backend Strings (FINAL ROBUST VERSION) ---
+const parseDateTimeString = (dateTimeStr) => {
+    if (!dateTimeStr) return null;
+
+    if (dateTimeStr.length === 10 && dateTimeStr.includes('-')) {
+        const utcDate = new Date(dateTimeStr + 'T00:00:00Z');
+        return isNaN(utcDate) ? null : utcDate;
+    }
+    if (dateTimeStr.length === 19 && dateTimeStr.includes(' ') && dateTimeStr.includes(':')) {
+        const utcDateTime = new Date(dateTimeStr.replace(' ', 'T') + 'Z');
+        return isNaN(utcDateTime) ? null : utcDateTime;
+    }
+    console.warn("Attempting fallback date parsing for:", dateTimeStr);
+    const d = new Date(dateTimeStr);
+    return isNaN(d) ? null : d;
+};
+
+
+const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+
+// --- 1. Book Extra Class Form Component ---
+function BookExtraClassForm({ courses, classrooms, structure, loadingData, onBookingSuccess }) {
+    const today = useMemo(() => new Date().toISOString().split('T')[0], []);
+    const branches = structure;
+    const [selectedBranchId, setSelectedBranchId] = useState('');
+    const [selectedDivisionId, setSelectedDivisionId] = useState('');
+    const [formData, setFormData] = useState({
+        course_id: '', batch_id: '', classroom_id: '',
+        class_date: '', start_time: '09:00', end_time: '10:00'
+    });
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    const availableDivisions = useMemo(() => {
+        if (!selectedBranchId) return [];
+        const branch = branches.find(b => b.branch_id === parseInt(selectedBranchId));
+        return branch ? branch.divisions : [];
+    }, [selectedBranchId, branches]);
+
+    const availableBatches = useMemo(() => {
+        if (!selectedDivisionId) return [];
+        const division = availableDivisions.find(d => d.division_id === parseInt(selectedDivisionId));
+        return division ? division.batches : [];
+    }, [selectedDivisionId, availableDivisions]);
+
+    const courseTypeMap = useMemo(() => {
+        return courses.reduce((map, course) => {
+            map[course.course_id] = course.type;
+            return map;
+        }, {});
+    }, [courses]);
+
+    const isPracticalCourse = useMemo(() => {
+        const courseId = parseInt(formData.course_id);
+        if (!courseId) return false;
+        const courseType = courseTypeMap[courseId];
+        return courseType && courseType.toLowerCase() !== 'theory';
+    }, [formData.course_id, courseTypeMap]);
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setError('');
+        if (name === 'branch_id') {
+            setSelectedBranchId(value);
+            setSelectedDivisionId('');
+            setFormData(prev => ({ ...prev, division_id: '', batch_id: '' }));
+        } else if (name === 'division_id') {
+            setSelectedDivisionId(value);
+            setFormData(prev => ({ ...prev, division_id: value, batch_id: '' }));
+        } else {
+            setFormData(prev => ({ ...prev, [name]: value }));
+        }
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        setLoading(true);
+
+        if (formData.start_time >= formData.end_time) {
+            setError("Start time must be before end time."); setLoading(false); return;
+        }
+        if (!selectedDivisionId) {
+            setError("Branch and Division are required."); setLoading(false); return;
+        }
+
+        let targetBatchId = parseInt(formData.batch_id);
+        if (isPracticalCourse) {
+            if (!targetBatchId) {
+                setError("Target Batch is required for Practical/Lab classes."); setLoading(false); return;
+            }
+        } else {
+            const division = availableDivisions.find(d => d.division_id === parseInt(selectedDivisionId));
+            if (division && division.batches.length > 0) {
+                targetBatchId = division.batches[0].batch_id;
+                console.log(`Theory Class: Using placeholder Batch ID ${targetBatchId} for division ${selectedDivisionId}.`);
+            } else {
+                setError("Could not find placeholder batch for this division."); setLoading(false); return;
+            }
+        }
+
+        try {
+            const payload = {
+                ...formData,
+                course_id: parseInt(formData.course_id),
+                batch_id: targetBatchId,
+                classroom_id: parseInt(formData.classroom_id),
+            };
+            const response = await apiClient.post('/book-extra-class', payload);
+            toast.success(response.data.message || 'Class booked successfully!');
+            onBookingSuccess();
+            setFormData({ course_id: '', batch_id: '', classroom_id: '', class_date: '', start_time: '09:00', end_time: '10:00' });
+            setSelectedBranchId(''); setSelectedDivisionId('');
+        } catch (err) {
+            const message = err.response?.data?.message || 'Server error during booking.';
+            setError(message); toast.error(message, { duration: 6000 });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="p-6 bg-white shadow-lg rounded-xl border border-indigo-100">
+            <h2 className="text-2xl font-bold text-indigo-700 mb-6 border-b pb-2">Book Extra Class</h2>
+            {(loadingData || loading) && <LoadingSpinner />}
+            {error && <ErrorMessage message={error} />}
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <SelectField label="Course" name="course_id" value={formData.course_id} onChange={handleChange} disabled={loadingData || loading}>
+                    <option value="" disabled>Select Course</option>
+                    {courses.map(c => <option key={c.course_id} value={c.course_id}>{c.course_code} - {c.course_name} ({c.type})</option>)}
+                </SelectField>
+                <div className="bg-indigo-50 p-4 rounded-lg space-y-4 border border-indigo-200">
+                    <h3 className="text-sm font-semibold text-gray-700">Target Student Group (Batch required only for Practical/Lab)</h3>
+                    <SelectField label="Branch" name="branch_id" value={selectedBranchId} onChange={handleChange} disabled={loadingData || loading}>
+                        <option value="" disabled>Select Branch</option>
+                        {branches.map(b => <option key={b.branch_id} value={b.branch_id}>{b.branch_name} ({b.branch_code})</option>)}
+                    </SelectField>
+                    <SelectField label="Division" name="division_id" value={selectedDivisionId} onChange={handleChange} disabled={!selectedBranchId || loadingData || loading}>
+                        <option value="" disabled>{selectedBranchId ? 'Select Division' : 'Select Branch first'}</option>
+                        {availableDivisions.map(d => <option key={d.division_id} value={d.division_id}>Division {d.division_name}</option>)}
+                    </SelectField>
+                    <SelectField label={`Target Batch ${isPracticalCourse ? '(Required)' : '(Auto-selected for Theory)'}`} name="batch_id" value={formData.batch_id} onChange={handleChange} disabled={!selectedDivisionId || loadingData || loading || !isPracticalCourse} required={isPracticalCourse} error={!isPracticalCourse && selectedDivisionId ? "Handled automatically." : null}>
+                        <option value="" disabled>{selectedDivisionId ? (isPracticalCourse ? 'Select Specific Batch' : 'Select for Lab/Practical') : 'Select Division first'}</option>
+                        {availableBatches.map(b => <option key={b.batch_id} value={b.batch_id}>Batch {b.batch_name}</option>)}
+                    </SelectField>
+                </div>
+                <SelectField label="Classroom / Lab" name="classroom_id" value={formData.classroom_id} onChange={handleChange} disabled={loadingData || loading}>
+                    <option value="" disabled>Select Classroom</option>
+                    {classrooms.map(cr => <option key={cr.classroom_id} value={cr.classroom_id}>{cr.room_number} ({cr.type} - {cr.building})</option>)}
+                </SelectField>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <InputField label="Date" name="class_date" type="date" value={formData.class_date} onChange={handleChange} min={today} disabled={loadingData || loading} />
+                    <InputField label="Start Time" name="start_time" type="time" value={formData.start_time} onChange={handleChange} disabled={loadingData || loading} />
+                    <InputField label="End Time" name="end_time" type="time" value={formData.end_time} onChange={handleChange} disabled={loadingData || loading} />
+                </div>
+                <Button type="submit" variant="primary" className="w-full" disabled={loading || loadingData}>
+                    {loading ? 'Checking...' : 'Book Class & Check Conflict'}
+                </Button>
+            </form>
+        </div>
+    );
+}
+
+// --- 2. View My Schedule Component (Calendar Layout) ---
+
+const EventItem = ({ event }) => (
+    <div className={`p-2 rounded-lg mb-2 ${event.type === 'Base' ? 'bg-indigo-50 border-indigo-300' : 'bg-yellow-50 border-yellow-400'} border shadow-sm`}>
+        <p className="font-semibold text-sm text-gray-800">{formatTime(event.start)} - {formatTime(event.end)}</p>
+        <p className="text-xs font-medium text-gray-700">{event.title}</p>
+        <p className="text-xs text-gray-600">{event.details}</p>
+        <span className={`mt-1 px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${event.type === 'Base' ? 'bg-indigo-100 text-indigo-800' : 'bg-yellow-100 text-yellow-800'}`}>
+            {event.type}
+        </span>
+    </div>
+);
+
+const CalendarHeader = ({ currentWeekStart, onPrev, onNext, onToday }) => {
+    const endDate = addDays(currentWeekStart, 6);
+    return (
+        <div className="flex items-center justify-between mb-4 px-2">
+            <h2 className="text-xl font-semibold text-gray-800">
+                {currentWeekStart.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - {endDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+            </h2>
+            <div className="flex space-x-2">
+                <Button variant="secondary" className="px-3 py-1.5 text-sm" onClick={onPrev}>&larr; Prev</Button>
+                <Button variant="secondary" className="px-3 py-1.5 text-sm" onClick={onToday}>Today</Button>
+                <Button variant="secondary" className="px-3 py-1.5 text-sm" onClick={onNext}>Next &rarr;</Button>
+            </div>
+        </div>
+    );
+};
+
+function ViewMySchedule({ refreshKey }) {
+    const [events, setEvents] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()));
+
+    useEffect(() => {
+        const fetchSchedule = async () => {
+            setLoading(true); setError('');
+            try {
+                const response = await apiClient.get('/professor/my-schedule');
+                const processedEvents = response.data.map(event => {
+                    const startDate = parseDateTimeString(event.start_time);
+                    const endDate = parseDateTimeString(event.end_time);
+                    const classDateForExtra = event.class_type === 'Extra' ? parseDateTimeString(event.class_date) : null;
+                    if (!startDate || !endDate || (event.class_type === 'Extra' && !classDateForExtra)) {
+                        console.warn("Skipping invalid event data:", event); return null;
+                    }
+                    return {
+                        id: event.schedule_id, title: `${event.course_code}: ${event.course_name}`,
+                        details: `Batch: ${event.batch_details || 'N/A'}, Room: ${event.room_number}`,
+                        start: startDate, end: endDate, type: event.class_type,
+                        dayOfWeek: event.day_of_week, classDate: classDateForExtra
+                    };
+                }).filter(Boolean);
+                setEvents(processedEvents);
+            } catch (err) {
+                setError(err.response?.data?.message || "Failed to load schedule.");
+                toast.error("Failed to load schedule.");
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchSchedule();
+    }, [refreshKey, currentWeekStart]);
+
+    const goToPreviousWeek = () => { setCurrentWeekStart(addDays(currentWeekStart, -7)); };
+    const goToNextWeek = () => { setCurrentWeekStart(addDays(currentWeekStart, 7)); };
+    const goToToday = () => { setCurrentWeekStart(getStartOfWeek(new Date())); };
+
+    if (loading) return <LoadingSpinner size="h-12 w-12" />;
+    if (error) return <ErrorMessage message={error} />;
+
+    return (
+        <div className="bg-white shadow-lg overflow-hidden sm:rounded-lg p-4 sm:p-6">
+            <h2 className="text-2xl font-bold text-indigo-700 mb-6 border-b pb-2">My Weekly Schedule</h2>
+            <CalendarHeader currentWeekStart={currentWeekStart} onPrev={goToPreviousWeek} onNext={goToNextWeek} onToday={goToToday} />
+            <div className="overflow-x-auto">
+                <div className="grid grid-cols-7 min-w-[800px] border-t border-l border-gray-200">
+                    {WEEK_DAYS.map((dayName, index) => {
+                        const currentDayDateLocal = addDays(currentWeekStart, index);
+                        const currentDayDateUTC = new Date(Date.UTC(currentDayDateLocal.getFullYear(), currentDayDateLocal.getMonth(), currentDayDateLocal.getDate()));
+                        const dayEvents = events.filter(event => {
+                            if (event.type === 'Base') return event.dayOfWeek === dayName;
+                            else return event.classDate && isSameDay(event.classDate, currentDayDateUTC);
+                        }).sort((a, b) => a.start.getTime() - b.start.getTime());
+                        const isToday = isSameDay(currentDayDateLocal, new Date());
+                        return (
+                            <div key={dayName} className="flex flex-col border-r border-b border-gray-200 min-h-[200px]">
+                                <div className={`p-2 border-b border-gray-200 ${isToday ? 'bg-indigo-50' : 'bg-gray-50'}`}>
+                                    <p className={`font-semibold text-center text-sm ${isToday ? 'text-indigo-600' : 'text-gray-700'}`}>{dayName}</p>
+                                    <p className={`text-center text-xs ${isToday ? 'text-indigo-500' : 'text-gray-500'}`}>{formatDateShort(currentDayDateLocal)}</p>
+                                </div>
+                                <div className="p-2 flex-grow overflow-y-auto">
+                                    {dayEvents.length > 0 ? dayEvents.map(event => <EventItem key={event.id} event={event} />) : <p className="text-xs text-gray-400 text-center pt-4">Free</p>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// --- NEW: Change Password Modal ---
+function ChangePasswordModal({ isOpen, onClose, onSubmit }) {
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        if (newPassword !== confirmPassword) {
+            setError("New passwords do not match."); return;
+        }
+        if (newPassword.length < 6) {
+             setError("New password must be at least 6 characters."); return;
+        }
+        // Add more validation as needed
+
+        setLoading(true);
+        try {
+            await onSubmit({ currentPassword, newPassword, confirmPassword });
+            // Reset form on success is handled by parent closing the modal
+        } catch (err) {
+            setError(err.message || "Failed to change password.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex justify-center items-center p-4">
+            <div className="relative bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+                <h2 className="text-xl font-bold mb-6 text-gray-800">Change Password</h2>
+                {error && <ErrorMessage message={error} />}
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <InputField
+                        label="Current Password" type="password" name="currentPassword"
+                        value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required
+                    />
+                    <InputField
+                        label="New Password" type="password" name="newPassword"
+                        value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required
+                    />
+                    <InputField
+                        label="Confirm New Password" type="password" name="confirmPassword"
+                        value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required
+                    />
+                    <div className="flex justify-end space-x-3 mt-6">
+                        <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>
+                            Cancel
+                        </Button>
+                        <Button type="submit" variant="primary" disabled={loading}>
+                            {loading ? <LoadingSpinner size="h-5 w-5"/> : "Update Password"}
+                        </Button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+// --- NEW: Dropdown Menu Component ---
+function DropdownMenu({ onLogout, onChangePassword }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef(null); // Ref for detecting outside clicks
+
+    // Close dropdown if clicked outside
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [dropdownRef]);
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="p-2 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                aria-label="User menu" aria-haspopup="true"
+            >
+                {/* Three-lined button SVG */}
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7"></path>
+                </svg>
+            </button>
+
+            {isOpen && (
+                <div
+                    className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-20"
+                    role="menu" aria-orientation="vertical" aria-labelledby="user-menu-button" tabIndex="-1"
+                >
+                    <button
+                        onClick={() => { onChangePassword(); setIsOpen(false); }}
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
+                        role="menuitem" tabIndex="-1" id="user-menu-item-0"
+                    >
+                        Change Password
+                    </button>
+                    <button
+                        onClick={() => { onLogout(); setIsOpen(false); }}
+                        className="block px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full text-left"
+                        role="menuitem" tabIndex="-1" id="user-menu-item-1"
+                    >
+                        Logout
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+
+// --- 3. Main Professor Dashboard Component ---
 function ProfessorDashboard() {
     const navigate = useNavigate();
     const [userData, setUserData] = useState(null);
-    const [activeTab, setActiveTab] = useState('book'); // 'book', 'my-schedule'
-
-    // --- ** NEW: State to trigger schedule refresh ** ---
+    const [activeTab, setActiveTab] = useState('book');
     const [refreshScheduleKey, setRefreshScheduleKey] = useState(0);
+    const [courses, setCourses] = useState([]);
+    const [classrooms, setClassrooms] = useState([]);
+    const [structure, setStructure] = useState([]);
+    const [loadingData, setLoadingData] = useState(true);
+    const [dataError, setDataError] = useState('');
+    const [isModalOpen, setIsModalOpen] = useState(false); // State for modal
+
+    const onBookingSuccess = useCallback(() => {
+        setRefreshScheduleKey(prev => prev + 1);
+        setActiveTab('my-schedule');
+    }, []);
 
     // --- Authentication & Authorization Check ---
     useEffect(() => {
         const token = getAuthToken();
         const storedUserData = localStorage.getItem('userData');
         if (!token || !storedUserData) {
-            console.log("No token or user data, redirecting to login.");
             navigate('/login'); return;
         }
         try {
             const parsedData = JSON.parse(storedUserData);
             if (parsedData.role !== 'Professor') {
-                console.warn("Access Denied: Not a Professor.");
-                // alert('Access Denied: This area is for Professors only.'); // Replaced with toast
-                toast.error('Access Denied: This area is for Professors only.');
+                toast.error('Access Denied: Professors only.');
                 navigate('/login');
             } else {
                 setUserData(parsedData);
             }
         } catch (error) {
-            console.error("Error parsing user data:", error);
             localStorage.clear(); navigate('/login');
         }
     }, [navigate]);
+
+    // --- Data Fetching for Form Dropdowns ---
+    useEffect(() => {
+        const fetchDropdownData = async () => {
+             setLoadingData(true); setDataError('');
+             try {
+                const [coursesRes, classroomsRes, structureRes] = await Promise.all([
+                    apiClient.get('/professor/courses'),
+                    apiClient.get('/professor/classrooms'),
+                    apiClient.get('/professor/batches'),
+                ]);
+                setCourses(coursesRes.data);
+                setClassrooms(classroomsRes.data);
+                setStructure(structureRes.data);
+             } catch (err) {
+                 setDataError("Failed to load necessary form data.");
+             } finally {
+                 setLoadingData(false);
+             }
+        };
+        if (userData) fetchDropdownData();
+    }, [userData]);
 
     const handleLogout = () => {
         localStorage.removeItem('authToken');
@@ -150,73 +599,71 @@ function ProfessorDashboard() {
         navigate('/login');
     };
 
+    // --- NEW: Handle Password Change Submission ---
+    const handlePasswordChange = async (passwords) => {
+        // Wrap the API call in a promise to handle errors in the modal
+        return new Promise(async (resolve, reject) => {
+            try {
+                const response = await apiClient.put('/user/change-password', passwords);
+                toast.success(response.data.message || 'Password changed successfully!');
+                setIsModalOpen(false); // Close modal on success
+                // Optionally force logout after password change for security
+                // handleLogout();
+                resolve(); // Indicate success
+            } catch (err) {
+                console.error("Password change error:", err);
+                // Extract specific error message from backend if available
+                const message = err.response?.data?.message || 'Failed to change password.';
+                reject(new Error(message)); // Reject with error message for modal
+            }
+        });
+    };
+
+
     if (!userData) {
         return <div className="min-h-screen flex items-center justify-center bg-gray-100"><LoadingSpinner size="h-12 w-12"/></div>;
     }
 
-    // --- ** NEW: Function to trigger refresh ** ---
-    const handleBookingSuccess = () => {
-        // Incrementing the key will cause ViewMySchedule's useEffect to re-run
-        setRefreshScheduleKey(prevKey => prevKey + 1);
-        // Optionally, also switch to the schedule tab
-        setActiveTab('my-schedule'); 
-    };
-
     const renderTabContent = () => {
+        if (dataError) return <ErrorMessage message={dataError} />;
         switch (activeTab) {
-            // --- ** MODIFIED: Pass handler to form ** ---
-            case 'book': return <BookExtraClassForm onBookingSuccess={handleBookingSuccess} />;
-            
-            // --- ** MODIFIED: Pass key to schedule ** ---
-            case 'my-schedule': return <ViewMySchedule refreshKey={refreshScheduleKey} />;
-            
-            default: return <BookExtraClassForm onBookingSuccess={handleBookingSuccess} />;
+            case 'book': return (
+                <BookExtraClassForm courses={courses} classrooms={classrooms} structure={structure} loadingData={loadingData} onBookingSuccess={onBookingSuccess} />
+            );
+            case 'my-schedule': return loadingData ? <LoadingSpinner size="h-12 w-12" /> : <ViewMySchedule refreshKey={refreshScheduleKey} />;
+            default: return <BookExtraClassForm courses={courses} classrooms={classrooms} structure={structure} loadingData={loadingData} onBookingSuccess={onBookingSuccess}/>;
         }
     };
 
     const TabButton = ({ tabId, children }) => (
-         <button
-            onClick={() => setActiveTab(tabId)}
-            className={`${activeTab === tabId
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-150 mr-4 sm:mr-8`}
-            aria-current={activeTab === tabId ? 'page' : undefined}
-        >
+         <button onClick={() => setActiveTab(tabId)} className={`${activeTab === tabId ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-150 mr-4 sm:mr-8`} aria-current={activeTab === tabId ? 'page' : undefined}>
             {children}
         </button>
     );
 
     return (
         <div className="min-h-screen bg-gray-100">
-            {/* Toast container for notifications */}
-            <Toaster position="top-right" toastOptions={{
-                duration: 5000,
-                style: {
-                    background: '#333',
-                    color: '#fff',
-                },
-                success: {
-                    duration: 3000,
-                    iconTheme: { primary: 'green', secondary: 'white' },
-                },
-                error: {
-                    iconTheme: { primary: 'red', secondary: 'white' },
-                },
-            }}/>
-
+            <Toaster position="top-right"/>
             {/* Header */}
             <header className="bg-white shadow-md sticky top-0 z-10">
                  <div className="max-w-7xl mx-auto py-3 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
                     <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-                        <svg className="w-8 h-8 mr-2 text-indigo-600" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span className="text-indigo-600">NoClash</span> <span className="text-gray-500 font-medium ml-2">- Professor</span>
+                        <div className="w-10 h-10 mr-2 rounded-md bg-white p-1 flex items-center justify-center border border-gray-200">
+                            <img src={logo} alt="NoClash" className="w-full h-full object-contain" />
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-indigo-600">NoClash</span>
+                            <span className="text-gray-500 font-medium text-sm">- Professor</span>
+                        </div>
                     </h1>
+                    {/* --- UPDATED HEADER SECTION --- */}
                     <div className="flex items-center space-x-4">
                         <span className="text-sm text-gray-600 hidden sm:inline">Welcome, {userData.full_name}!</span>
-                        <Button onClick={handleLogout} variant="danger" className="text-xs px-3 py-1.5">
-                            Logout
-                        </Button>
+                        {/* --- Dropdown Menu --- */}
+                        <DropdownMenu
+                            onLogout={handleLogout}
+                            onChangePassword={() => setIsModalOpen(true)}
+                        />
                     </div>
                  </div>
             </header>
@@ -226,472 +673,30 @@ function ProfessorDashboard() {
                 <div className="mb-6 border-b border-gray-200 bg-white rounded-lg shadow px-4 sm:px-0 overflow-x-auto">
                     <nav className="-mb-px flex px-4 sm:px-6" aria-label="Tabs">
                         <TabButton tabId="book">Book Extra Class</TabButton>
-                        <TabButton tabId="my-schedule">My Schedule</TabButton> {/* <-- ADD THIS */}
+                        <TabButton tabId="my-schedule">My Schedule</TabButton>
                     </nav>
                 </div>
-
                 {/* Tab Content */}
-                <div className="mt-4">
-                    {renderTabContent()}
-                </div>
+                <div className="mt-4">{renderTabContent()}</div>
             </main>
+
+            {/* Footer */}
+                <footer className="bg-white mt-10 shadow-inner">
+                      <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex items-center justify-center space-x-3 text-gray-500 text-sm">
+                          <img src={logo} alt="NoClash" className="w-6 h-6 rounded-full" />
+                          <div>&copy; {new Date().getFullYear()} <span className="font-medium text-indigo-600">NoClash</span>. All rights reserved.</div>
+                      </div>
+                </footer>
+
+            {/* --- Render Change Password Modal --- */}
+            <ChangePasswordModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSubmit={handlePasswordChange}
+            />
         </div>
     );
 }
-
-// --- Book Extra Class Form Component ---
-
-// --- ** MODIFIED: Accept onBookingSuccess prop ** ---
-function BookExtraClassForm({ onBookingSuccess }) {
-    // Dropdown data state
-    const [courses, setCourses] = useState([]);
-    const [classrooms, setClassrooms] = useState([]);
-    const [academicStructure, setAcademicStructure] = useState([]); // Nested: Branch > Division > Batch
-    
-    // Form selection state
-    const [selectedBranch, setSelectedBranch] = useState('');
-    const [selectedDivision, setSelectedDivision] = useState('');
-    
-    // Form data state
-    const [courseId, setCourseId] = useState('');
-    const [batchId, setBatchId] = useState('');
-    const [classroomId, setClassroomId] = useState('');
-    const [classDate, setClassDate] = useState(''); // Changed from null to '' for <input type="date">
-    const [startTime, setStartTime] = useState(''); // Changed from null to '' for <input type="time">
-    const [endTime, setEndTime] = useState('');   // Changed from null to '' for <input type="time">
-
-    // UI State
-    const [loadingData, setLoadingData] = useState(true);
-    const [submitting, setSubmitting] = useState(false);
-    const [error, setError] = useState('');
-
-    // Fetch data for all dropdowns on component mount
-    useEffect(() => {
-        const fetchData = async () => {
-            setLoadingData(true);
-            setError('');
-            try {
-                const [coursesRes, classroomsRes, structureRes] = await Promise.all([
-                    apiClient.get('/professor/courses'),
-                    apiClient.get('/professor/classrooms'),
-                    apiClient.get('/professor/batches') // This fetches the nested structure
-                ]);
-                setCourses(coursesRes.data || []);
-                setClassrooms(classroomsRes.data || []);
-                setAcademicStructure(structureRes.data || []);
-            } catch (err) {
-                console.error("Error fetching form data:", err);
-                setError(err.response?.data?.message || "Failed to load necessary data. Please try again.");
-                toast.error("Failed to load form data. Please refresh.");
-            } finally {
-                setLoadingData(false);
-            }
-        };
-        fetchData();
-    }, []);
-
-    // Memoized derived lists for cascading dropdowns
-    const divisions = useMemo(() => {
-        if (!selectedBranch) return [];
-        const branch = academicStructure.find(b => b.branch_id === parseInt(selectedBranch));
-        return branch ? branch.divisions : [];
-    }, [selectedBranch, academicStructure]);
-
-    const batches = useMemo(() => {
-        if (!selectedDivision) return [];
-        const division = divisions.find(d => d.division_id === parseInt(selectedDivision));
-        return division ? division.batches : [];
-    }, [selectedDivision, divisions]);
-
-    // Handle dropdown changes
-    const handleBranchChange = (e) => {
-        setSelectedBranch(e.target.value);
-        setSelectedDivision('');
-        setBatchId(''); // Reset subsequent selections
-    };
-
-    const handleDivisionChange = (e) => {
-        setSelectedDivision(e.target.value);
-        setBatchId(''); // Reset batch selection
-    };
-
-    // --- Helper to get today's date in YYYY-MM-DD format for min attribute ---
-    const getTodayString = () => {
-        return new Date().toISOString().split('T')[0];
-    };
-
-    // Handle Form Submission
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        
-        // --- Validation ---
-        if (!courseId || !batchId || !classroomId || !classDate || !startTime || !endTime) {
-            toast.error("Please fill out all fields.");
-            return;
-        }
-        if (endTime <= startTime) {
-            toast.error("End time must be after start time.");
-            return;
-        }
-
-        const payload = {
-            course_id: parseInt(courseId),
-            batch_id: parseInt(batchId),
-            classroom_id: parseInt(classroomId),
-            class_date: classDate, // Already in YYYY-MM-DD format
-            start_time: `${startTime}:00`, // Append seconds for HH:mm:ss format
-            end_time: `${endTime}:00`,   // Append seconds for HH:mm:ss format
-        };
-
-        console.log("Booking payload:", payload);
-        setSubmitting(true);
-        const toastId = toast.loading('Checking for conflicts...');
-
-        try {
-            const response = await apiClient.post('/book-extra-class', payload);
-            
-            // Success
-            toast.success(response.data.message || 'Extra class booked successfully!', { id: toastId });
-
-            // --- ** NEW: Call the refresh handler ** ---
-            if (onBookingSuccess) {
-                onBookingSuccess();
-            }
-            
-            // Reset form
-            setCourseId('');
-            setBatchId('');
-            setClassroomId('');
-            setClassDate('');
-            setStartTime('');
-            setEndTime('');
-            setSelectedBranch('');
-            setSelectedDivision('');
-
-        } catch (err) {
-            // Conflict (409) or other error
-            console.error("Booking error:", err.response);
-            const errorMessage = err.response?.data?.message || "An unexpected error occurred.";
-            toast.error(errorMessage, { id: toastId, duration: 6000 }); // Show conflict message for longer
-        } finally {
-            setSubmitting(false);
-        }
-    };
-
-    if (loadingData) return <LoadingSpinner />;
-    if (error) return <ErrorMessage message={error} />;
-
-    return (
-        <div className="bg-white shadow-lg overflow-hidden sm:rounded-lg max-w-2xl mx-auto">
-            <form onSubmit={handleSubmit}>
-                <div className="p-4 sm:p-6">
-                    <h2 className="text-xl font-semibold mb-5 text-gray-800 border-b pb-2">Book an Extra Class</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                        {/* --- Course --- */}
-                        <SelectField label="Course" name="course" value={courseId} onChange={e => setCourseId(e.target.value)} disabled={submitting}>
-                            <option value="" disabled>-- Select a Course --</option>
-                            {courses.map(course => (
-                                <option key={course.course_id} value={course.course_id}>
-                                    {course.course_code} - {course.course_name}
-                                </option>
-                            ))}
-                        </SelectField>
-
-                        {/* --- Classroom --- */}
-                        <SelectField label="Classroom" name="classroom" value={classroomId} onChange={e => setClassroomId(e.target.value)} disabled={submitting}>
-                            <option value="" disabled>-- Select a Classroom --</option>
-                            {classrooms.map(cr => (
-                                <option key={cr.classroom_id} value={cr.classroom_id}>
-                                    {cr.room_number} ({cr.building}) - {cr.type}
-                                </option>
-                            ))}
-                        </SelectField>
-
-                        {/* --- Branch --- */}
-                        <SelectField label="Target Branch" name="branch" value={selectedBranch} onChange={handleBranchChange} disabled={submitting}>
-                            <option value="" disabled>-- Select Branch --</option>
-                            {academicStructure.map(branch => (
-                                <option key={branch.branch_id} value={branch.branch_id}>
-                                    {branch.branch_name}
-                                </option>
-                            ))}
-                        </SelectField>
-
-                        {/* --- Division --- */}
-                        <SelectField label="Target Division" name="division" value={selectedDivision} onChange={handleDivisionChange} disabled={!selectedBranch || submitting}>
-                            <option value="" disabled>-- Select Division --</option>
-                            {divisions.map(div => (
-                                <option key={div.division_id} value={div.division_id}>
-                                    Division {div.division_name}
-                                </option>
-                            ))}
-                        </SelectField>
-
-                        {/* --- Batch --- */}
-                        <SelectField label="Target Batch" name="batch" value={batchId} onChange={e => setBatchId(e.target.value)} disabled={!selectedDivision || submitting}>
-                            <option value="" disabled>-- Select Batch --</option>
-                            {batches.map(batch => (
-                                <option key={batch.batch_id} value={batch.batch_id}>
-                                    Batch {batch.batch_name}
-                                </option>
-                            ))}
-                        </SelectField>
-
-                        <div /> {/* Spacer */}
-
-                        {/* --- Date Picker --- */}
-                        <InputField
-                            label="Class Date"
-                            name="classDate"
-                            type="date"
-                            value={classDate}
-                            onChange={(e) => setClassDate(e.target.value)}
-                            min={getTodayString()} // Professor can only book for today or future
-                            disabled={submitting}
-                        />
-
-                        <div /> {/* Spacer */}
-
-                        {/* --- Start Time Picker --- */}
-                         <InputField
-                            label="Start Time"
-                            name="startTime"
-                            type="time"
-                            value={startTime}
-                            onChange={(e) => setStartTime(e.target.value)}
-                            disabled={submitting}
-                        />
-
-                        {/* --- End Time Picker --- */}
-                        <InputField
-                            label="End Time"
-                            name="endTime"
-                            type="time"
-                            value={endTime}
-                            onChange={(e) => setEndTime(e.target.value)}
-                            disabled={submitting}
-                        />
-                    </div>
-                </div>
-                {/* --- Submit Button --- */}
-                <div className="bg-gray-50 px-4 py-4 sm:px-6 text-right">
-                    <Button type="submit" variant="primary" disabled={submitting || loadingData}>
-                        {submitting ? 'Booking...' : 'Book Class'}
-                    </Button>
-                </div>
-            </form>
-        </div>
-    );
-}
-
-
-// --- ** NEW: View My Schedule Component ** ---
-
-// --- Date Helper Functions ---
-const addDays = (date, days) => {
-    const result = new Date(date);
-    result.setDate(result.getDate() + days);
-    return result;
-};
-
-// Gets the date for the Monday of the week `date` is in
-const getStartOfWeek = (date) => {
-    const d = new Date(date);
-    const day = d.getDay(); // Sunday - 0, Monday - 1, ...
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-    return new Date(d.setDate(diff));
-};
-
-const formatDateShort = (date) => {
-    // e.g., "10/25"
-    return date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
-};
-
-const formatTime = (date) => {
-    // e.g., "9:00 AM"
-    return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-};
-
-// Checks if two dates are on the same day (ignoring time)
-const isSameDay = (date1, date2) => {
-    return date1.getFullYear() === date2.getFullYear() &&
-           date1.getMonth() === date2.getMonth() &&
-           date1.getDate() === date2.getDate();
-};
-
-const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-
-// --- ** MODIFIED: Accept refreshKey prop ** ---
-function ViewMySchedule({ refreshKey }) {
-    const [events, setEvents] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    // State to manage which week is being viewed, storing the Monday of that week
-    const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()));
-
-    // Fetch and process schedule data
-    useEffect(() => {
-        const fetchSchedule = async () => {
-            setLoading(true);
-            setError('');
-            try {
-                const response = await apiClient.get('/professor/my-schedule');
-                
-                // --- ** NEW: Bulletproof Date Parsing Function ** ---
-                // Parses 'YYYY-MM-DD HH:mm:ss' string as local time reliably
-                const parseDateTimeString = (dateTimeStr) => {
-                    if (!dateTimeStr) return null;
-                    const parts = dateTimeStr.split(' ');
-                    if (parts.length !== 2) return new Date(dateTimeStr); // Fallback
-
-                    const dateParts = parts[0].split('-').map(Number);
-                    const timeParts = parts[1].split(':').map(Number);
-
-                    if (dateParts.length !== 3 || timeParts.length !== 3) {
-                         // Fallback for different formats, e.g., if it includes 'T'
-                        return new Date(dateTimeStr);
-                    }
-                    
-                    // new Date(year, monthIndex, day, hour, minute, second)
-                    return new Date(dateParts[0], dateParts[1] - 1, dateParts[2], timeParts[0], timeParts[1], timeParts[2]);
-                };
-                
-                // Process backend data into a more usable format for the calendar
-                const processedEvents = response.data.map(event => {
-                    // --- ** MODIFIED: Use new parsing function ** ---
-                    const startDate = parseDateTimeString(event.start_time);
-                    const endDate = parseDateTimeString(event.end_time);
-
-                    return {
-                        id: event.schedule_id,
-                        title: `${event.course_code}: ${event.course_name}`,
-                        details: `Batch: ${event.batch_details}, Room: ${event.room_number}`,
-                        start: startDate,
-                        end: endDate,
-                        type: event.class_type, // 'Base' or 'Extra'
-                        // For Base classes, day_of_week is key.
-                        dayOfWeek: event.day_of_week, 
-                        // For Extra classes, the specific date is key.
-                        // We parse it from the start_time string
-                        // --- ** MODIFIED: Use startDate object ** ---
-                        classDate: event.class_type === 'Extra' ? startDate : null
-                    };
-                });
-                setEvents(processedEvents);
-            } catch (err) {
-                console.error("Error fetching schedule:", err);
-                setError(err.response?.data?.message || "Failed to load schedule.");
-                toast.error("Failed to load schedule.");
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchSchedule();
-    // --- ** MODIFIED: Add refreshKey to dependency array ** ---
-    }, [refreshKey]); // This component will now refetch when refreshKey changes
-
-    // --- Navigation Functions ---
-    const goToPreviousWeek = () => {
-        setCurrentWeekStart(addDays(currentWeekStart, -7));
-    };
-
-    const goToNextWeek = () => {
-        setCurrentWeekStart(addDays(currentWeekStart, 7));
-    };
-
-    const goToToday = () => {
-        setCurrentWeekStart(getStartOfWeek(new Date()));
-    };
-
-    // --- Calendar Header ---
-    const CalendarHeader = () => {
-        const endDate = addDays(currentWeekStart, 6);
-        return (
-            <div className="flex items-center justify-between mb-4 px-2">
-                <h2 className="text-xl font-semibold text-gray-800">
-                    {currentWeekStart.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}
-                    {' - '}
-                    {endDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
-                </h2>
-                <div className="flex space-x-2">
-                    <Button variant="secondary" className="px-3 py-1.5 text-sm" onClick={goToPreviousWeek}>&larr; Prev</Button>
-                    <Button variant="secondary" className="px-3 py-1.5 text-sm" onClick={goToToday}>Today</Button>
-                    <Button variant="secondary" className="px-3 py-1.5 text-sm" onClick={goToNextWeek}>Next &rarr;</Button>
-                </div>
-            </div>
-        );
-    };
-
-    // --- Event Component ---
-    const EventItem = ({ event }) => (
-        <div className={`p-2 rounded-lg mb-2 ${event.type === 'Base' ? 'bg-blue-100 border-blue-300' : 'bg-green-100 border-green-300'} border`}>
-            <p className="font-semibold text-sm text-gray-800">{formatTime(event.start)} - {formatTime(event.end)}</p>
-            <p className="text-xs font-medium text-gray-700">{event.title}</p>
-            <p className="text-xs text-gray-600">{event.details}</p>
-            <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${event.type === 'Base' ? 'bg-blue-200 text-blue-800' : 'bg-green-200 text-green-800'}`}>
-                {event.type}
-            </span>
-        </div>
-    );
-
-    // --- Render Logic ---
-    if (loading) return <LoadingSpinner />;
-    if (error) return <ErrorMessage message={error} />;
-
-    return (
-        <div className="bg-white shadow-lg overflow-hidden sm:rounded-lg p-4 sm:p-6">
-            <CalendarHeader />
-            
-            {/* Grid for the calendar days */}
-            <div className="grid grid-cols-1 sm:grid-cols-7 border-t border-l border-gray-200">
-                {WEEK_DAYS.map((dayName, index) => {
-                    // Get the specific date for this day in the current week
-                    const currentDayDate = addDays(currentWeekStart, index);
-                    
-                    // Filter events that belong to this day
-                    const dayEvents = events.filter(event => {
-                        if (event.type === 'Base') {
-                            // Match 'Base' classes by the day of the week
-                            return event.dayOfWeek === dayName;
-                        } else {
-                            // Match 'Extra' classes by the exact date
-                            return event.classDate && isSameDay(event.classDate, currentDayDate);
-                        }
-                    }).sort((a, b) => a.start - b.start); // Sort events by start time
-
-                    const isToday = isSameDay(currentDayDate, new Date());
-
-                    return (
-                        <div key={dayName} className="flex flex-col border-r border-b border-gray-200 min-h-[200px]">
-                            {/* Day Header */}
-                            <div className={`p-2 border-b border-gray-200 ${isToday ? 'bg-indigo-50' : 'bg-gray-50'}`}>
-                                <p className={`font-semibold text-center text-sm ${isToday ? 'text-indigo-600' : 'text-gray-700'}`}>
-                                    {dayName}
-                                </p>
-                                <p className={`text-center text-xs ${isToday ? 'text-indigo-500' : 'text-gray-500'}`}>
-                                    {formatDateShort(currentDayDate)}
-                                </p>
-                            </div>
-                            
-                            {/* Events List for the day */}
-                            <div className="p-2 flex-grow overflow-y-auto">
-                                {dayEvents.length > 0 ? (
-                                    dayEvents.map(event => <EventItem key={event.id} event={event} />)
-                                ) : (
-                                    <p className="text-xs text-gray-400 text-center pt-4">No classes</p>
-                                )}
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-}
-
 
 export default ProfessorDashboard;
-
-
 

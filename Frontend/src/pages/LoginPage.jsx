@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import logo from '../../Utils/logo.png';
 import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom'; // Import useNavigate
 
@@ -86,15 +87,16 @@ function LoginPage() {
     return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-100 via-white to-purple-100 p-4">
             <div className="bg-white p-8 sm:p-10 rounded-xl shadow-lg w-full max-w-md border border-gray-200">
-                {/* Image Placeholder */}
-                <img
-                  src="https://placehold.co/100x100/6366f1/white?text=Logo" // <!-- Add your image URL here -->
-                  alt="NoClash Logo"
-                  className="w-16 h-16 mx-auto mb-4 rounded-full shadow-md"
-                  onError={(e) => { e.target.onerror = null; console.error("Failed to load image:", e.target.src); }}
-                />
-
-                <h1 className="text-3xl font-bold mb-2 text-center text-gray-800">NoClash</h1>
+                                {/* Brand Logo */}
+                                <div className="flex items-center justify-center mb-4">
+                                    <div className="w-20 h-20 mr-3 rounded-md bg-white p-2 shadow-md flex items-center justify-center border border-gray-200">
+                                        <img src={logo} alt="NoClash Logo" className="w-full h-full object-contain" />
+                                    </div>
+                                    <div className="text-center">
+                                        <h1 className="text-2xl font-bold text-gray-800">NoClash</h1>
+                                        <p className="text-sm text-indigo-600 font-medium">Timetable Conflict Checker</p>
+                                    </div>
+                                </div>
                 <h2 className="text-xl font-semibold text-gray-700 mb-6 text-center">Login</h2>
 
                 {error && <p className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm border border-red-300">{error}</p>}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import logo from '../../Utils/logo.png';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
@@ -236,8 +237,13 @@ function AdminDashboard() {
             <header className="bg-white shadow-md sticky top-0 z-10">
                  <div className="max-w-7xl mx-auto py-3 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
                     <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-                        <svg className="w-8 h-8 mr-2 text-indigo-600" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span className="text-indigo-600">NoClash</span> <span className="text-gray-500 font-medium ml-2">- Admin</span>
+                        <div className="w-10 h-10 mr-2 rounded-md bg-white p-1 flex items-center justify-center border border-gray-200">
+                            <img src={logo} alt="NoClash" className="w-full h-full object-contain" />
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-indigo-600">NoClash</span>
+                            <span className="text-gray-500 font-medium text-sm">- Admin</span>
+                        </div>
                     </h1>
                     <div className="flex items-center space-x-4">
                         <span className="text-sm text-gray-600 hidden sm:inline">Welcome, {userData.full_name}!</span>
@@ -266,12 +272,13 @@ function AdminDashboard() {
                 </div>
             </main>
 
-            {/* Footer */}
-            <footer className="bg-white mt-10 shadow-inner">
-                 <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 text-center text-gray-500 text-sm">
-                    &copy; {new Date().getFullYear()} NoClash. All rights reserved.
-                 </div>
-            </footer>
+                {/* Footer */}
+                <footer className="bg-white mt-10 shadow-inner">
+                      <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex items-center justify-center space-x-3 text-gray-500 text-sm">
+                          <img src={logo} alt="NoClash" className="w-6 h-6 rounded-full" />
+                          <div>&copy; {new Date().getFullYear()} <span className="font-medium text-indigo-600">NoClash</span>. All rights reserved.</div>
+                      </div>
+                </footer>
         </div>
     );
 }
