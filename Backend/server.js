@@ -14,7 +14,14 @@ const app = express();
 const port = process.env.PORT || 4000; // Use port from env or default to 4000
 
 // === MIDDLEWARE ===
-app.use(cors()); // Enable Cross-Origin Resource Sharing
+// CORS Configuration
+const corsOptions = {
+    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions)); // Enable configured CORS
 app.use(express.json()); // Middleware to parse JSON bodies
 
 // === DATABASE CONNECTION POOL ===
