@@ -15,12 +15,29 @@ const port = process.env.PORT || 4000; // Use port from env or default to 4000
 
 // === MIDDLEWARE ===
 // CORS Configuration
+const allowedOrigins = [
+    'https://noclash.vercel.app',     // Vercel production
+    'http://localhost:5173',          // Vite dev server
+    'http://localhost:4173',          // Vite preview
+    'http://127.0.0.1:5173',         // Alternative local
+    process.env.CORS_ORIGIN          // Additional origin from env
+].filter(Boolean); // Remove any undefined/null values
+
 const corsOptions = {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps, curl, postman)
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.warn(`CORS blocked request from origin: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     optionsSuccessStatus: 200
 };
+
 app.use(cors(corsOptions)); // Enable configured CORS
 app.use(express.json()); // Middleware to parse JSON bodies
 
