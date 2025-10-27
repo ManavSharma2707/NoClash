@@ -1,11 +1,11 @@
 import express from 'express';
-import mysql from 'mysql2/promise'; // Use promise version for async/await
+// mysql pool moved to Backend/lib/db.js
 import cors from 'cors';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs'; // For password hashing
 import jwt from 'jsonwebtoken'; // For JWTs
 // import cron from 'node-cron'; // REMOVED as per previous step
-import { URL } from 'url'; // Built-in Node.js URL module
+import { getPool } from './lib/db.js';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -18,52 +18,8 @@ app.use(cors()); // Enable Cross-Origin Resource Sharing
 app.use(express.json()); // Middleware to parse JSON bodies
 
 // === DATABASE CONNECTION POOL ===
-let pool;
-try {
-    const dbUrl = process.env.DATABASE_URL;
-    if (!dbUrl) {
-        throw new Error("DATABASE_URL environment variable is not set.");
-    }
-    const parsedUrl = new URL(dbUrl);
-    const dbConfig = {
-        host: parsedUrl.hostname,
-        port: parsedUrl.port || 3306,
-        user: parsedUrl.username,
-        password: parsedUrl.password,
-        database: parsedUrl.pathname.slice(1), // Remove leading '/'
-        connectionLimit: 10,
-        dateStrings: true, // Return DATE/DATETIME types as strings
-    };
-
-    // Explicitly configure SSL based on sslmode parameter
-    const sslMode = parsedUrl.searchParams.get('sslmode');
-    if (sslMode && sslMode.toUpperCase() !== 'DISABLED' && sslMode.toUpperCase() !== 'NONE') {
-        dbConfig.ssl = {
-            rejectUnauthorized: true
-        };
-        console.log("SSL configuration enabled for database connection.");
-    } else {
-        console.log("SSL configuration disabled or not specified for database connection.");
-    }
-
-
-    pool = mysql.createPool(dbConfig);
-    console.log("Database connection pool created successfully.");
-
-    // Test the connection immediately
-    pool.getConnection()
-        .then(connection => {
-            console.log('Successfully connected to the database!');
-            connection.release();
-        })
-        .catch(err => {
-            console.error('Error getting initial database connection:', err);
-        });
-
-} catch (error) {
-    console.error("Error creating database connection pool:", error.message);
-    process.exit(1); // Exit if pool creation fails
-}
+// Use shared pool from lib/db.js
+const pool = getPool();
 
 // === JWT MIDDLEWARE ===
 
