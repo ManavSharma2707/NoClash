@@ -121,23 +121,26 @@ const formatTime = (date) => {
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 };
 
+// Compare LOCAL calendar day to avoid UTC offset issues (IST, etc.)
 const isSameDay = (date1, date2) => {
     if (!date1 || !date2) return false;
-    return date1.getUTCFullYear() === date2.getUTCFullYear() &&
-           date1.getUTCMonth() === date2.getUTCMonth() &&
-           date1.getUTCDate() === date2.getUTCDate();
+    return date1.getFullYear() === date2.getFullYear() &&
+           date1.getMonth() === date2.getMonth() &&
+           date1.getDate() === date2.getDate();
 };
 
-// --- Custom Date Parsing (UTC based) ---
+// --- Custom Date Parsing (treat MySQL DATETIME as local) ---
 const parseDateTimeString = (dateTimeStr) => {
     if (!dateTimeStr) return null;
+    // Date only: interpret as local midnight
     if (dateTimeStr.length === 10 && dateTimeStr.includes('-')) {
-        const utcDate = new Date(dateTimeStr + 'T00:00:00Z');
-        return isNaN(utcDate) ? null : utcDate;
+        const dLocal = new Date(dateTimeStr + 'T00:00:00');
+        return isNaN(dLocal) ? null : dLocal;
     }
+    // Datetime: interpret as local clock time
     if (dateTimeStr.length === 19 && dateTimeStr.includes(' ') && dateTimeStr.includes(':')) {
-        const utcDateTime = new Date(dateTimeStr.replace(' ', 'T') + 'Z');
-        return isNaN(utcDateTime) ? null : utcDateTime;
+        const dLocalDT = new Date(dateTimeStr.replace(' ', 'T'));
+        return isNaN(dLocalDT) ? null : dLocalDT;
     }
     const d = new Date(dateTimeStr);
     return isNaN(d) ? null : d;
@@ -202,10 +205,9 @@ function ViewStudentSchedule({ currentWeekStart }) {
                 <div className="grid grid-cols-7 min-w-[800px] border-t border-l border-gray-200">
                     {WEEK_DAYS.map((dayName, index) => {
                         const currentDayDateLocal = addDays(currentWeekStart, index);
-                        const currentDayDateUTC = new Date(Date.UTC(currentDayDateLocal.getFullYear(), currentDayDateLocal.getMonth(), currentDayDateLocal.getDate()));
                         const dayEvents = events.filter(event => {
                             if (event.type === 'Base') return event.dayOfWeek === dayName;
-                            else return event.classDate && isSameDay(event.classDate, currentDayDateUTC);
+                            else return event.classDate && isSameDay(event.classDate, currentDayDateLocal);
                         }).sort((a, b) => a.start.getTime() - b.start.getTime());
                         const isToday = isSameDay(currentDayDateLocal, new Date());
                         return (
