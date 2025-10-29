@@ -4,7 +4,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
 // --- API Base URL & Helpers ---
-const API_BASE_URL = 'http://localhost:4000/api'; // Ensure this matches your backend
+const API_BASE_URL = 'https://noclash.onrender.com/api'; // Ensure this matches your backend
 
 const getAuthToken = () => localStorage.getItem('authToken');
 

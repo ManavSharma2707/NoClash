@@ -13,7 +13,7 @@ import StudentDashboard from './pages/StudentDashboard'; // <-- IMPORT NEW DASHB
 
 // --- API Base URL ---
 // You might move this to a .env file later
-const API_BASE_URL = 'http://localhost:4000/api'; // Make sure this matches your backend port
+const API_BASE_URL = 'https://noclash.onrender.com/api'; // Make sure this matches your backend port
 
 // --- Reusable Input Component ---
 // (Keep the InputField component definition as you have it)

@@ -41,7 +41,7 @@ function LoginPage() {
         try {
             console.log('Attempting login with:', { email: trimmedEmail, password });
             // --- API Call ---
-            const response = await axios.post('http://localhost:4000/api/login', {
+            const response = await axios.post('https://noclash.onrender.com/api/login', {
                 email: trimmedEmail,
                 password: password, // Send non-trimmed password
             });

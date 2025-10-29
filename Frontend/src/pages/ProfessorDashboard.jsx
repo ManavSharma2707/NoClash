@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { Toaster, toast } from 'react-hot-toast';
 
 // --- API Base URL & Helpers ---
-const API_BASE_URL = 'http://localhost:4000/api';
+const API_BASE_URL = 'https://noclash.onrender.com/api';
 
 const getAuthToken = () => localStorage.getItem('authToken');
 

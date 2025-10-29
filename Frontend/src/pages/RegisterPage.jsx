@@ -68,7 +68,7 @@ const AlertMessage = ({ message, type = 'error' }) => {
 };
 
 // --- API Base URL ---
-const API_BASE_URL = 'http://localhost:4000/api'; // Ensure this matches your backend
+const API_BASE_URL = 'https://noclash.onrender.com/api'; // Ensure this matches your backend
 
 // --- RegisterPage Component ---
 function RegisterPage() {
