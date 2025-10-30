@@ -24,26 +24,28 @@ The heart of NoClash is the DBMS/SQL layer: a normalized MySQL schema with const
 
 ```mermaid
 flowchart LR
-  subgraph Client
-    A[Web App (Vite+React)]
+  subgraph Client["Client"]
+    A[Web App - Vite React]
   end
 
-  subgraph Server
+  subgraph Server["Server"]
     B[Express API]
-    C[Auth (JWT)]
+    C[Auth - JWT]
     D[Business Logic]
   end
 
-  subgraph Data
-    E[(MySQL)]
+  subgraph Data["Data"]
+    E[(MySQL Database)]
     F[mysql2 Connection Pool]
   end
 
+  %% Connections
   A -->|HTTPS + CORS| B
   B --> C
   B --> D
   D -->|SQL Queries| F
   F --> E
+
 ```
 
 ## Database model (inferred)
@@ -52,75 +54,75 @@ The API queries reveal these core entities and relationships.
 
 ```mermaid
 erDiagram
-  Users {
-    INT user_id PK
+  USERS {
+    INT user_id
     VARCHAR full_name
-    VARCHAR email UNIQUE
+    VARCHAR email
     VARCHAR password
-    ENUM role "Administrator|Professor|Student"
-    ENUM approval_status "Pending|Approved|Rejected"
-    INT division_id FK
-    INT batch_id FK
+    VARCHAR role
+    VARCHAR approval_status
+    INT division_id
+    INT batch_id
   }
 
-  Branches {
-    INT branch_id PK
+  BRANCHES {
+    INT branch_id
     VARCHAR branch_name
-    VARCHAR branch_code UNIQUE
+    VARCHAR branch_code
   }
 
-  Divisions {
-    INT division_id PK
-    INT branch_id FK
+  DIVISIONS {
+    INT division_id
+    INT branch_id
     VARCHAR division_name
   }
 
-  Batches {
-    INT batch_id PK
-    INT division_id FK
+  BATCHES {
+    INT batch_id
+    INT division_id
     VARCHAR batch_name
   }
 
-  Courses {
-    INT course_id PK
-    VARCHAR course_code UNIQUE
+  COURSES {
+    INT course_id
+    VARCHAR course_code
     VARCHAR course_name
-    INT branch_id FK
+    INT branch_id
     INT credits
-    ENUM type "Theory|Lab"
+    VARCHAR type
   }
 
-  Classrooms {
-    INT classroom_id PK
-    VARCHAR room_number UNIQUE
+  CLASSROOMS {
+    INT classroom_id
+    VARCHAR room_number
     VARCHAR building
     INT floor
     INT capacity
-    ENUM type "Lecture|Lab"
+    VARCHAR type
   }
 
-  Schedule {
-    INT schedule_id PK
-    INT course_id FK
-    INT professor_id FK
-    INT batch_id FK
-    INT classroom_id FK
-    VARCHAR day_of_week "Monday..Sunday"
+  SCHEDULE {
+    INT schedule_id
+    INT course_id
+    INT professor_id
+    INT batch_id
+    INT classroom_id
+    VARCHAR day_of_week
     DATETIME start_time
     DATETIME end_time
-    ENUM class_type "Base|Extra"
+    VARCHAR class_type
     DATE class_date
   }
 
-  Branches ||--o{ Divisions : contains
-  Divisions ||--o{ Batches : groups
-  Branches ||--o{ Courses : offers
-  Users ||--o{ Schedule : teaches (professor_id)
-  Batches ||--o{ Schedule : attends
-  Classrooms ||--o{ Schedule : hosts
-  Courses ||--o{ Schedule : scheduled
-  Divisions ||--o{ Users : placement (students)
-  Batches ||--o{ Users : placement (students)
+  BRANCHES ||--o{ DIVISIONS : contains
+  DIVISIONS ||--o{ BATCHES : groups
+  BRANCHES ||--o{ COURSES : offers
+  USERS ||--o{ SCHEDULE : teaches
+  BATCHES ||--o{ SCHEDULE : attends
+  CLASSROOMS ||--o{ SCHEDULE : hosts
+  COURSES ||--o{ SCHEDULE : scheduled
+  DIVISIONS ||--o{ USERS : has_students
+  BATCHES ||--o{ USERS : has_students
 ```
 
 Notes
