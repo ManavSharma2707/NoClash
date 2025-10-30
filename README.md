@@ -42,7 +42,7 @@ flowchart LR
   A -->|HTTPS + CORS| B
   B --> C
   B --> D
-  D <-->|SQL Queries| F
+  D -->|SQL Queries| F
   F --> E
 ```
 
@@ -56,9 +56,9 @@ erDiagram
     INT user_id PK
     VARCHAR full_name
     VARCHAR email UNIQUE
-    VARCHAR password -- bcrypt hash
-    ENUM role -- Administrator|Professor|Student
-    ENUM approval_status -- Pending|Approved|Rejected
+    VARCHAR password
+    ENUM role "Administrator|Professor|Student"
+    ENUM approval_status "Pending|Approved|Rejected"
     INT division_id FK
     INT batch_id FK
   }
@@ -87,7 +87,7 @@ erDiagram
     VARCHAR course_name
     INT branch_id FK
     INT credits
-    ENUM type -- e.g., Theory/Lab
+    ENUM type "Theory|Lab"
   }
 
   Classrooms {
@@ -96,20 +96,20 @@ erDiagram
     VARCHAR building
     INT floor
     INT capacity
-    ENUM type -- e.g., Lecture/Lab
+    ENUM type "Lecture|Lab"
   }
 
   Schedule {
     INT schedule_id PK
     INT course_id FK
-    INT professor_id FK -- Users.user_id
+    INT professor_id FK
     INT batch_id FK
     INT classroom_id FK
-    VARCHAR day_of_week -- Monday..Sunday (for base classes)
+    VARCHAR day_of_week "Monday..Sunday"
     DATETIME start_time
     DATETIME end_time
-    ENUM class_type -- Base|Extra
-    DATE class_date -- for Extra; null or ignored for Base
+    ENUM class_type "Base|Extra"
+    DATE class_date
   }
 
   Branches ||--o{ Divisions : contains
