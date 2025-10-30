@@ -324,12 +324,12 @@ function RegisterPage() {
                         <p className="text-sm text-indigo-600 font-medium">Timetable Conflict Checker</p>
                     </div>
                 </div>
-                <h2 className="text-2xl font-semibold text-gray-700 mb-4 text-center">Create Account</h2>
+                <h2 className="text-2xl font-semibold text-gray-800 mb-4 text-center">Create account</h2>
                 {/* Progress Indicator */}
              <div className="mb-8 flex justify-center items-center space-x-2 sm:space-x-4 px-2">
                      {['Role', 'Details', formData.role === 'Student' ? 'Academic' : null].filter(Boolean).map((stepName, index) => (
                         <React.Fragment key={index}>
-                           {index > 0 && <div className={`flex-1 h-1 rounded ${step > index ? 'bg-teal-500' : 'bg-gray-300'}`}></div>}
+                           {index > 0 && <div className={`flex-1 h-1 rounded ${step > index ? 'bg-indigo-500' : 'bg-gray-300'}`}></div>}
                             <div className="flex flex-col items-center flex-shrink-0">
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step >= index + 1 ? 'bg-indigo-600 text-white' : 'bg-gray-300 text-gray-600'}`}> {index + 1} </div>
                                 <span className={`mt-1 text-xs text-center ${step >= index + 1 ? 'text-indigo-700 font-medium' : 'text-gray-500'}`}>{stepName}</span>
